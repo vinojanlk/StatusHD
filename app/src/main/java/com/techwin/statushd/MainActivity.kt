@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.techwin.statushd.feature.status.SavedStatusScreen
 import com.techwin.statushd.ui.theme.StatusHDTheme
 
 class MainActivity : ComponentActivity() {
@@ -52,7 +53,7 @@ fun MainScreen(
     videoViewModel: VideoViewModel = viewModel(),
     photoViewModel: PhotoViewModel = viewModel()
 ) {
-    var selectedTab by remember { mutableStateOf(0) } // 0 = Video, 1 = Photo
+    var selectedTab by remember { mutableStateOf(0) } // 0 = Video, 1 = Photo, 2 = Saved Status
     val context = LocalContext.current
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && selectedTab == 0) {
@@ -92,15 +93,58 @@ fun MainScreen(
                         onClick = { selectedTab = 1 },
                         text = { Text("Photo") }
                     )
+                    Tab(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        text = { Text("Saved Status") }
+                    )
                 }
             }
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (selectedTab == 0) {
-                VideoScreen(viewModel = videoViewModel)
-            } else {
-                PhotoScreen(viewModel = photoViewModel)
+            when (selectedTab) {
+                0 -> VideoScreen(viewModel = videoViewModel)
+                1 -> PhotoScreen(viewModel = photoViewModel)
+                2 -> SavedStatusScreen(
+                    onOptimizePhoto = { uri ->
+                        photoViewModel.selectPhoto(uri)
+                        selectedTab = 1
+                    },
+                    onOptimizeVideo = { uri, duration, w, h, bitrate ->
+                        if (duration > 0 && w > 0 && h > 0) {
+                            videoViewModel.selectVideo(uri, duration, w, h, bitrate)
+                        } else {
+                            val retriever = MediaMetadataRetriever()
+                            try {
+                                retriever.setDataSource(context, uri)
+                                val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                                val dur = durStr?.toLongOrNull() ?: 0L
+                                val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                                val hStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                                val rotStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                                val bitStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
+
+                                var width = wStr?.toIntOrNull() ?: 0
+                                var height = hStr?.toIntOrNull() ?: 0
+                                val rot = rotStr?.toIntOrNull() ?: 0
+                                val bitKbps = (bitStr?.toIntOrNull() ?: 0) / 1000
+
+                                if (rot == 90 || rot == 270) {
+                                    val tmp = width
+                                    width = height
+                                    height = tmp
+                                }
+                                videoViewModel.selectVideo(uri, dur, width, height, bitKbps)
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "Error reading video metadata", Toast.LENGTH_SHORT).show()
+                            } finally {
+                                try { retriever.release() } catch (_: Exception) {}
+                            }
+                        }
+                        selectedTab = 0
+                    }
+                )
             }
         }
     }

@@ -52,6 +52,8 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.6.0")
     // AndroidX ExifInterface
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // DataStore Preferences
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
