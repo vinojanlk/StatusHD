@@ -48,11 +48,14 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: VideoViewModel = viewModel()) {
-    val uiState by viewModel.uiState.collectAsState()
+fun MainScreen(
+    videoViewModel: VideoViewModel = viewModel(),
+    photoViewModel: PhotoViewModel = viewModel()
+) {
+    var selectedTab by remember { mutableStateOf(0) } // 0 = Video, 1 = Photo
     val context = LocalContext.current
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && selectedTab == 0) {
         val permissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission()
         ) { _ -> }
@@ -67,6 +70,46 @@ fun MainScreen(viewModel: VideoViewModel = viewModel()) {
             }
         }
     }
+
+    Scaffold(
+        topBar = {
+            Column {
+                TopAppBar(
+                    title = { Text("Status HD", fontWeight = FontWeight.Bold) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
+                TabRow(selectedTabIndex = selectedTab) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("Video") }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Photo") }
+                    )
+                }
+            }
+        }
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            if (selectedTab == 0) {
+                VideoScreen(viewModel = videoViewModel)
+            } else {
+                PhotoScreen(viewModel = photoViewModel)
+            }
+        }
+    }
+}
+
+@Composable
+fun VideoScreen(viewModel: VideoViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -109,114 +152,203 @@ fun MainScreen(viewModel: VideoViewModel = viewModel()) {
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Status HD", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+
+        if (uiState.selectedVideoUri == null) {
+            Spacer(modifier = Modifier.height(48.dp))
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.primary
             )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(padding)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-
-            if (uiState.selectedVideoUri == null) {
-                Spacer(modifier = Modifier.height(48.dp))
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "High Quality Status Maker",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Process videos privately on your device. Perfect formatting for WhatsApp.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(32.dp))
-                Button(
-                    onClick = {
-                        launcher.launch(
-                            androidx.activity.result.PickVisualMediaRequest(
-                                ActivityResultContracts.PickVisualMedia.VideoOnly
-                            )
+            Text(
+                text = "High Quality Status Maker",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Process videos privately on your device. Perfect formatting for WhatsApp.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(
+                onClick = {
+                    launcher.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.VideoOnly
                         )
-                    },
-                    modifier = Modifier.fillMaxWidth().height(56.dp)
-                ) {
-                    Text("Select Video", style = MaterialTheme.typography.titleMedium)
-                }
-
-            } else {
-                ElevatedCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.elevatedCardColors()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Selected Video", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Duration: ${uiState.durationMs / 1000}s")
-                        Text("Dimensions: ${uiState.width}x${uiState.height}")
-                    }
-                }
-
-                if (!uiState.isProcessing && uiState.completedUris.isEmpty()) {
-                    Text(
-                        "Select Quality",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.Start)
                     )
+                },
+                modifier = Modifier.fillMaxWidth().height(56.dp)
+            ) {
+                Text("Select Video", style = MaterialTheme.typography.titleMedium)
+            }
 
-                    QualityMode.values().forEach { mode ->
-                        Card(
-                            onClick = { viewModel.setMode(mode) },
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (uiState.selectedMode == mode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+        } else {
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.elevatedCardColors()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Selected Video", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Duration: ${uiState.durationMs / 1000}s")
+                    Text("Dimensions: ${uiState.width}x${uiState.height}")
+                }
+            }
+
+            if (!uiState.isProcessing && uiState.completedUris.isEmpty()) {
+                Text(
+                    "Select Quality",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.Start)
+                )
+
+                QualityMode.values().forEach { mode ->
+                    Card(
+                        onClick = { viewModel.setMode(mode) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (uiState.selectedMode == mode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = uiState.selectedMode == mode,
-                                    onClick = { viewModel.setMode(mode) }
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(mode.title, fontWeight = FontWeight.Bold)
-                                    Text(mode.desc, style = MaterialTheme.typography.bodySmall)
-                                }
+                            RadioButton(
+                                selected = uiState.selectedMode == mode,
+                                onClick = { viewModel.setMode(mode) }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(mode.title, fontWeight = FontWeight.Bold)
+                                Text(mode.desc, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
+                }
 
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { viewModel.startProcessing() },
+                        modifier = Modifier.weight(1f).height(50.dp)
+                    ) {
+                        Text("Optimize")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            launcher.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    ActivityResultContracts.PickVisualMedia.VideoOnly
+                                )
+                            )
+                        },
+                        modifier = Modifier.weight(1f).height(50.dp)
+                    ) {
+                        Text("Change")
+                    }
+                }
+            }
+
+            AnimatedVisibility(visible = uiState.isProcessing) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth().padding(32.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(64.dp))
                     Spacer(modifier = Modifier.height(16.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Optimizing... ${uiState.progress}%", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedButton(onClick = { viewModel.cancelProcessing() }) {
+                        Text("Cancel")
+                    }
+                }
+            }
+
+            AnimatedVisibility(visible = uiState.completedUris.isNotEmpty()) {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Success",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Optimization Complete!", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Saved ${uiState.completedUris.size} part(s) to Gallery",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+
                         Button(
-                            onClick = { viewModel.startProcessing() },
-                            modifier = Modifier.weight(1f).height(50.dp)
+                            onClick = {
+                                val uris = ArrayList(uiState.completedUris)
+                                val intent = if (uris.size == 1) {
+                                    Intent(Intent.ACTION_SEND).apply {
+                                        type = "video/mp4"
+                                        putExtra(Intent.EXTRA_STREAM, uris.first())
+                                    }
+                                } else {
+                                    Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                                        type = "video/mp4"
+                                        putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                                    }
+                                }
+                                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
+                                val pm = context.packageManager
+                                val resolveInfos = pm.queryIntentActivities(intent, 0)
+                                var targetPackage: String? = null
+                                if (resolveInfos.any { it.activityInfo.packageName == "com.whatsapp" }) {
+                                    targetPackage = "com.whatsapp"
+                                } else if (resolveInfos.any { it.activityInfo.packageName == "com.whatsapp.w4b" }) {
+                                    targetPackage = "com.whatsapp.w4b"
+                                }
+                                if (targetPackage != null) {
+                                    intent.setPackage(targetPackage)
+                                }
+
+                                try {
+                                    if (intent.`package` != null) {
+                                        context.startActivity(intent)
+                                    } else {
+                                        context.startActivity(Intent.createChooser(intent, "Share to WhatsApp"))
+                                    }
+                                } catch (e: ActivityNotFoundException) {
+                                    context.startActivity(Intent.createChooser(intent, "Share Video"))
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(50.dp)
                         ) {
-                            Text("Optimize")
+                            Text("Share to WhatsApp")
                         }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
                         OutlinedButton(
                             onClick = {
                                 launcher.launch(
@@ -225,112 +357,9 @@ fun MainScreen(viewModel: VideoViewModel = viewModel()) {
                                     )
                                 )
                             },
-                            modifier = Modifier.weight(1f).height(50.dp)
+                            modifier = Modifier.fillMaxWidth().height(50.dp)
                         ) {
-                            Text("Change")
-                        }
-                    }
-                }
-
-                AnimatedVisibility(visible = uiState.isProcessing) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxWidth().padding(32.dp)
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(64.dp))
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Optimizing... ${uiState.progress}%", style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        OutlinedButton(onClick = { viewModel.cancelProcessing() }) {
-                            Text("Cancel")
-                        }
-                    }
-                }
-
-                AnimatedVisibility(visible = uiState.completedUris.isNotEmpty()) {
-                    ElevatedCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.elevatedCardColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Success",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Optimization Complete!", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Text(
-                                "Saved ${uiState.completedUris.size} part(s) to Gallery",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            Button(
-                                onClick = {
-                                    val uris = ArrayList(uiState.completedUris)
-                                    val intent = if (uris.size == 1) {
-                                        Intent(Intent.ACTION_SEND).apply {
-                                            type = "video/mp4"
-                                            putExtra(Intent.EXTRA_STREAM, uris.first())
-                                        }
-                                    } else {
-                                        Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-                                            type = "video/mp4"
-                                            putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
-                                        }
-                                    }
-                                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-
-                                    // Target WA explicitly if available
-                                    val pm = context.packageManager
-                                    val resolveInfos = pm.queryIntentActivities(intent, 0)
-                                    var targetPackage: String? = null
-                                    if (resolveInfos.any { it.activityInfo.packageName == "com.whatsapp" }) {
-                                        targetPackage = "com.whatsapp"
-                                    } else if (resolveInfos.any { it.activityInfo.packageName == "com.whatsapp.w4b" }) {
-                                        targetPackage = "com.whatsapp.w4b"
-                                    }
-                                    if (targetPackage != null) {
-                                        intent.setPackage(targetPackage)
-                                    }
-
-                                    try {
-                                        if (intent.`package` != null) {
-                                            context.startActivity(intent)
-                                        } else {
-                                            context.startActivity(Intent.createChooser(intent, "Share to WhatsApp"))
-                                        }
-                                    } catch (e: ActivityNotFoundException) {
-                                        context.startActivity(Intent.createChooser(intent, "Share Video"))
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth().height(50.dp)
-                            ) {
-                                Text("Share to WhatsApp")
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            OutlinedButton(
-                                onClick = {
-                                    launcher.launch(
-                                        androidx.activity.result.PickVisualMediaRequest(
-                                            ActivityResultContracts.PickVisualMedia.VideoOnly
-                                        )
-                                    )
-                                },
-                                modifier = Modifier.fillMaxWidth().height(50.dp)
-                            ) {
-                                Text("Start Over")
-                            }
+                            Text("Start Over")
                         }
                     }
                 }

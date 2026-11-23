@@ -48,6 +48,10 @@ dependencies {
 
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+    // Coil for image loading
+    implementation("io.coil-kt:coil-compose:2.6.0")
+    // AndroidX ExifInterface
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
