@@ -27,7 +27,7 @@ import com.techwin.statushd.VideoViewModel
 import com.techwin.statushd.ui.components.*
 
 @Composable
-fun VideoScreenContent(viewModel: VideoViewModel) {
+fun VideoScreenContent(viewModel: VideoViewModel, paddingValues: PaddingValues) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
@@ -79,7 +79,12 @@ fun VideoScreenContent(viewModel: VideoViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
+                .padding(
+                    top = paddingValues.calculateTopPadding() + 20.dp,
+                    start = 20.dp,
+                    end = 20.dp,
+                    bottom = paddingValues.calculateBottomPadding() + 24.dp
+                ),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             when {

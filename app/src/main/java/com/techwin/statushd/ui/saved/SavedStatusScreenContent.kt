@@ -52,6 +52,7 @@ import java.util.Locale
 @Composable
 fun SavedStatusScreenContent(
     viewModel: SavedStatusViewModel,
+    paddingValues: PaddingValues,
     onNavigateToPhoto: (Uri) -> Unit,
     onNavigateToVideo: (Uri, Long, Int, Int, Int) -> Unit
 ) {
@@ -74,17 +75,25 @@ fun SavedStatusScreenContent(
         label = "SavedStatusTransition"
     ) { state ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp)
+            modifier = Modifier.fillMaxSize()
         ) {
             when (state) {
                 SavedStatusUiState.Loading -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     }
                 }
                 SavedStatusUiState.NoFolderSelected -> {
                     Column(
-                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(
+                                top = paddingValues.calculateTopPadding() + 20.dp,
+                                start = 20.dp,
+                                end = 20.dp,
+                                bottom = paddingValues.calculateBottomPadding() + 24.dp
+                            ),
                         verticalArrangement = Arrangement.spacedBy(28.dp)
                     ) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -153,7 +162,7 @@ fun SavedStatusScreenContent(
                 }
 
                 SavedStatusUiState.PermissionLost -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
                         ErrorCard(
                             message = "The selected folder is no longer available.",
                             onRetry = { treeLauncher.launch(null) }
@@ -162,12 +171,20 @@ fun SavedStatusScreenContent(
                 }
 
                 is SavedStatusUiState.FolderLoaded -> {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        shape = RoundedCornerShape(24.dp)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(
+                                top = paddingValues.calculateTopPadding() + 16.dp,
+                                start = 20.dp,
+                                end = 20.dp
+                            )
                     ) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                            shape = RoundedCornerShape(24.dp)
+                        ) {
                         Row(
                             modifier = Modifier.padding(20.dp).fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -239,7 +256,7 @@ fun SavedStatusScreenContent(
                             modifier = Modifier.fillMaxSize(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
-                            contentPadding = PaddingValues(bottom = 24.dp)
+                            contentPadding = PaddingValues(bottom = paddingValues.calculateBottomPadding() + 24.dp)
                         ) {
                             items(state.items, key = { it.documentId }) { item ->
                                 StatusGridItem(
@@ -249,6 +266,7 @@ fun SavedStatusScreenContent(
                             }
                         }
                     }
+                } // Close FolderLoaded wrapper
 
                     // Detail Dialog
                     state.selectedItem?.let { selected ->

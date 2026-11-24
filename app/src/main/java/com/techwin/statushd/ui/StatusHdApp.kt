@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
@@ -71,7 +72,10 @@ fun StatusHdApp(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showAbout = true }) {
+                    IconButton(
+                        onClick = { showAbout = true },
+                        modifier = Modifier.size(48.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Info,
                             contentDescription = "About",
@@ -96,9 +100,9 @@ fun StatusHdApp(
                     icon = { Icon(Icons.Default.VideoLibrary, contentDescription = "Video") },
                     label = { Text("Video", fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                        selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                        indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
                         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -109,9 +113,9 @@ fun StatusHdApp(
                     icon = { Icon(Icons.Default.PhotoLibrary, contentDescription = "Photo") },
                     label = { Text("Photo", fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                        selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                        indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
                         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -122,9 +126,9 @@ fun StatusHdApp(
                     icon = { Icon(Icons.Default.BookmarkBorder, contentDescription = "Saved") },
                     label = { Text("Saved", fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                        selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                        indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
                         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -136,13 +140,13 @@ fun StatusHdApp(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
         ) {
             when (selectedTab) {
-                0 -> VideoScreenContent(viewModel = videoViewModel)
-                1 -> PhotoScreenContent(viewModel = photoViewModel)
+                0 -> VideoScreenContent(viewModel = videoViewModel, paddingValues = paddingValues)
+                1 -> PhotoScreenContent(viewModel = photoViewModel, paddingValues = paddingValues)
                 2 -> SavedStatusScreenContent(
                     viewModel = savedStatusViewModel,
+                    paddingValues = paddingValues,
                     onNavigateToPhoto = { uri ->
                         photoViewModel.selectPhoto(uri)
                         selectedTab = 1

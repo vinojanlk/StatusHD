@@ -31,7 +31,7 @@ import com.techwin.statushd.PhotoViewModel
 import com.techwin.statushd.ui.components.*
 
 @Composable
-fun PhotoScreenContent(viewModel: PhotoViewModel) {
+fun PhotoScreenContent(viewModel: PhotoViewModel, paddingValues: PaddingValues) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
@@ -57,7 +57,12 @@ fun PhotoScreenContent(viewModel: PhotoViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
+                .padding(
+                    top = paddingValues.calculateTopPadding() + 20.dp,
+                    start = 20.dp,
+                    end = 20.dp,
+                    bottom = paddingValues.calculateBottomPadding() + 24.dp
+                ),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             when (state) {
