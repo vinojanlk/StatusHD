@@ -14,57 +14,64 @@ data class RetryResult(
     val retriedCount: Int
 )
 
+enum class StopResult {
+    ACCEPTED,
+    ALREADY_STOPPING,
+    NOT_RUNNING
+}
+
+data class BatchPhotoQueueSnapshot(
+    val state: BatchState,
+    val lockedMode: PhotoQualityMode?,
+    val items: List<BatchPhotoItem>
+)
+
 class BatchPhotoRunner(
     private val preparer: PhotoPreparer
 ) {
     private val mutex = Mutex()
 
-    var batchState: BatchState = BatchState.Draft
-        private set
-
-    var lockedMode: PhotoQualityMode? = null
-        private set
-
+    private var _batchState: BatchState = BatchState.Draft
+    private var _lockedMode: PhotoQualityMode? = null
     private val _items = mutableListOf<BatchPhotoItem>()
-    val items: List<BatchPhotoItem>
-        get() = synchronized(_items) { _items.toList() }
 
-    val summary: BatchPhotoSummary
-        get() = synchronized(_items) { BatchPhotoSummary.fromItems(_items) }
+    suspend fun getSnapshot(): BatchPhotoQueueSnapshot = mutex.withLock {
+        BatchPhotoQueueSnapshot(
+            state = _batchState,
+            lockedMode = _lockedMode,
+            items = _items.toList()
+        )
+    }
 
-    fun initializeQueue(identifiers: List<String>): Boolean {
-        if (batchState != BatchState.Draft && batchState != BatchState.Finished) return false
+    suspend fun initializeQueue(identifiers: List<String>): Boolean = mutex.withLock {
+        if (_batchState != BatchState.Draft && _batchState != BatchState.Finished) return false
+
         val policy = BatchPhotoSelectionPolicy.validateAndDeduplicate(identifiers)
         if (!policy.isValidForStart) return false
 
-        synchronized(_items) {
-            _items.clear()
-            policy.acceptedIdentifiers.forEachIndexed { index, id ->
-                _items.add(
-                    BatchPhotoItem(
-                        id = "item_${index + 1}_$id",
-                        sourceIdentifier = id,
-                        originalOrderIndex = index
-                    )
+        _items.clear()
+        policy.acceptedIdentifiers.forEachIndexed { index, id ->
+            _items.add(
+                BatchPhotoItem(
+                    id = "item_${index + 1}_$id",
+                    sourceIdentifier = id,
+                    originalOrderIndex = index
                 )
-            }
+            )
         }
-        batchState = BatchState.Draft
-        lockedMode = null
+        _batchState = BatchState.Draft
+        _lockedMode = null
         return true
     }
 
     suspend fun start(mode: PhotoQualityMode): Boolean {
         val canStart = mutex.withLock {
-            if (batchState != BatchState.Draft && batchState != BatchState.Finished) false
+            if (_batchState != BatchState.Draft) false
+            else if (_items.size < 2) false
             else {
-                val count = synchronized(_items) { _items.size }
-                if (count < 2) false
-                else {
-                    batchState = BatchState.Running
-                    lockedMode = mode
-                    true
-                }
+                _batchState = BatchState.Running
+                _lockedMode = mode
+                true
             }
         }
 
@@ -74,39 +81,38 @@ class BatchPhotoRunner(
         return true
     }
 
-    suspend fun stopAfterCurrent(): Boolean = mutex.withLock {
-        if (batchState != BatchState.Running) return false
-
-        batchState = BatchState.Stopping
-
-        synchronized(_items) {
-            _items.forEachIndexed { index, item ->
-                if (item.status is BatchItemStatus.Waiting) {
-                    _items[index] = item.copy(
-                        status = BatchItemStatus.Skipped(ItemSkipReason.UserStopped)
-                    )
+    suspend fun stopAfterCurrent(): StopResult = mutex.withLock {
+        when (_batchState) {
+            BatchState.Running -> {
+                _batchState = BatchState.Stopping
+                _items.forEachIndexed { index, item ->
+                    if (item.status is BatchItemStatus.Waiting) {
+                        _items[index] = item.copy(
+                            status = BatchItemStatus.Skipped(ItemSkipReason.UserStopped)
+                        )
+                    }
                 }
+                if (_items.none { it.status is BatchItemStatus.Processing }) {
+                    _batchState = BatchState.Finished
+                }
+                StopResult.ACCEPTED
             }
-            if (_items.none { it.status is BatchItemStatus.Processing }) {
-                batchState = BatchState.Finished
-            }
+            BatchState.Stopping -> StopResult.ALREADY_STOPPING
+            else -> StopResult.NOT_RUNNING
         }
-        return true
     }
 
     suspend fun retryFailed(): RetryResult {
         var eligibleCount = 0
 
         val canStartRetry = mutex.withLock {
-            if (batchState != BatchState.Finished) return RetryResult(RetryResultCode.INVALID_STATE, 0)
-            val currentMode = lockedMode ?: return RetryResult(RetryResultCode.INVALID_STATE, 0)
+            if (_batchState != BatchState.Finished) return RetryResult(RetryResultCode.INVALID_STATE, 0)
+            val currentMode = _lockedMode ?: return RetryResult(RetryResultCode.INVALID_STATE, 0)
 
-            synchronized(_items) {
-                _items.forEachIndexed { index, item ->
-                    if (item.status is BatchItemStatus.Failed && isRetryEligible(item.failureCategory)) {
-                        _items[index] = item.copy(status = BatchItemStatus.Waiting)
-                        eligibleCount++
-                    }
+            _items.forEachIndexed { index, item ->
+                if (item.status is BatchItemStatus.Failed && isRetryEligible(item.failureCategory)) {
+                    _items[index] = item.copy(status = BatchItemStatus.Waiting)
+                    eligibleCount++
                 }
             }
 
@@ -114,7 +120,7 @@ class BatchPhotoRunner(
                 return RetryResult(RetryResultCode.NO_ELIGIBLE_FAILURES, 0)
             }
 
-            batchState = BatchState.Running
+            _batchState = BatchState.Running
             true
         }
 
@@ -125,78 +131,74 @@ class BatchPhotoRunner(
     }
 
     private suspend fun claimNextItem(): Pair<Int, BatchPhotoItem>? = mutex.withLock {
-        if (batchState != BatchState.Running) return null
-        val index = synchronized(_items) { _items.indexOfFirst { it.status is BatchItemStatus.Waiting } }
+        if (_batchState != BatchState.Running) return null
+        val index = _items.indexOfFirst { it.status is BatchItemStatus.Waiting }
         if (index == -1) {
-            batchState = BatchState.Finished
+            _batchState = BatchState.Finished
             return null
         }
-        val item = synchronized(_items) {
-            val claimed = _items[index].copy(status = BatchItemStatus.Processing)
-            _items[index] = claimed
-            claimed
-        }
-        return Pair(index, item)
+        val claimed = _items[index].copy(status = BatchItemStatus.Processing)
+        _items[index] = claimed
+        return Pair(index, claimed)
     }
 
     private suspend fun recordResultAndCheckContinue(
         index: Int,
         result: BatchPhotoPreparationResult
     ): Boolean = mutex.withLock {
-        synchronized(_items) {
-            when (result) {
-                is BatchPhotoPreparationResult.Success -> {
-                    _items[index] = _items[index].copy(
-                        status = BatchItemStatus.Done(result)
-                    )
-                }
-                is BatchPhotoPreparationResult.Failure -> {
-                    when (result.category) {
-                        PhotoProcessingFailure.UnsupportedFormat -> {
-                            _items[index] = _items[index].copy(
-                                status = BatchItemStatus.Skipped(ItemSkipReason.UnsupportedFormat)
-                            )
-                        }
-                        PhotoProcessingFailure.SourceTooLarge -> {
-                            _items[index] = _items[index].copy(
-                                status = BatchItemStatus.Skipped(ItemSkipReason.SourceTooLarge)
-                            )
-                        }
-                        PhotoProcessingFailure.OutOfMemory -> {
-                            _items[index] = _items[index].copy(
-                                status = BatchItemStatus.Failed(result.category)
-                            )
-                            _items.forEachIndexed { idx, itm ->
-                                if (itm.status is BatchItemStatus.Waiting) {
-                                    _items[idx] = itm.copy(
-                                        status = BatchItemStatus.Skipped(ItemSkipReason.FatalFailure)
-                                    )
-                                }
-                            }
-                            batchState = BatchState.Finished
-                            return false
-                        }
-                        else -> {
-                            _items[index] = _items[index].copy(
-                                status = BatchItemStatus.Failed(result.category)
-                            )
-                        }
-                    }
-                }
+        when (result) {
+            is BatchPhotoPreparationResult.Success -> {
+                _items[index] = _items[index].copy(
+                    status = BatchItemStatus.Done(result)
+                )
             }
-
-            if (batchState == BatchState.Stopping) {
-                _items.forEachIndexed { idx, itm ->
-                    if (itm.status is BatchItemStatus.Waiting) {
-                        _items[idx] = itm.copy(
-                            status = BatchItemStatus.Skipped(ItemSkipReason.UserStopped)
+            is BatchPhotoPreparationResult.Failure -> {
+                when (result.category) {
+                    PhotoProcessingFailure.UnsupportedFormat -> {
+                        _items[index] = _items[index].copy(
+                            status = BatchItemStatus.Skipped(ItemSkipReason.UnsupportedFormat)
+                        )
+                    }
+                    PhotoProcessingFailure.SourceTooLarge -> {
+                        _items[index] = _items[index].copy(
+                            status = BatchItemStatus.Skipped(ItemSkipReason.SourceTooLarge)
+                        )
+                    }
+                    PhotoProcessingFailure.OutOfMemory -> {
+                        _items[index] = _items[index].copy(
+                            status = BatchItemStatus.Failed(result.category)
+                        )
+                        _items.forEachIndexed { idx, itm ->
+                            if (itm.status is BatchItemStatus.Waiting) {
+                                _items[idx] = itm.copy(
+                                    status = BatchItemStatus.Skipped(ItemSkipReason.FatalFailure)
+                                )
+                            }
+                        }
+                        _batchState = BatchState.Finished
+                        return false
+                    }
+                    else -> {
+                        _items[index] = _items[index].copy(
+                            status = BatchItemStatus.Failed(result.category)
                         )
                     }
                 }
-                batchState = BatchState.Finished
-                return false
             }
         }
+
+        if (_batchState == BatchState.Stopping) {
+            _items.forEachIndexed { idx, itm ->
+                if (itm.status is BatchItemStatus.Waiting) {
+                    _items[idx] = itm.copy(
+                        status = BatchItemStatus.Skipped(ItemSkipReason.UserStopped)
+                    )
+                }
+            }
+            _batchState = BatchState.Finished
+            return false
+        }
+
         return true
     }
 
@@ -205,7 +207,8 @@ class BatchPhotoRunner(
             val claim = claimNextItem() ?: break
             val index = claim.first
             val item = claim.second
-            val mode = lockedMode ?: break
+
+            val mode = mutex.withLock { _lockedMode } ?: break
 
             val prepResult = preparer.prepare(
                 sourceUri = item.sourceIdentifier,
