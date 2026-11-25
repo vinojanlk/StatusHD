@@ -24,8 +24,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.techwin.statushd.PhotoViewModel
 import com.techwin.statushd.VideoViewModel
+import com.techwin.statushd.BatchPhotoViewModel
 import com.techwin.statushd.feature.status.SavedStatusViewModel
 import com.techwin.statushd.ui.photo.PhotoScreenContent
+import com.techwin.statushd.ui.photo.BatchPhotoScreenContent
 import com.techwin.statushd.ui.saved.SavedStatusScreenContent
 import com.techwin.statushd.ui.video.VideoScreenContent
 
@@ -34,10 +36,12 @@ import com.techwin.statushd.ui.video.VideoScreenContent
 fun StatusHdApp(
     videoViewModel: VideoViewModel = viewModel(),
     photoViewModel: PhotoViewModel = viewModel(),
+    batchPhotoViewModel: BatchPhotoViewModel = viewModel(),
     savedStatusViewModel: SavedStatusViewModel = viewModel()
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     var showAbout by remember { mutableStateOf(false) }
+    var isBatchActive by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -143,7 +147,22 @@ fun StatusHdApp(
         ) {
             when (selectedTab) {
                 0 -> VideoScreenContent(viewModel = videoViewModel, paddingValues = paddingValues)
-                1 -> PhotoScreenContent(viewModel = photoViewModel, paddingValues = paddingValues)
+                1 -> if (isBatchActive) {
+                    BatchPhotoScreenContent(
+                        viewModel = batchPhotoViewModel,
+                        paddingValues = paddingValues,
+                        onBack = { isBatchActive = false }
+                    )
+                } else {
+                    PhotoScreenContent(
+                        viewModel = photoViewModel,
+                        paddingValues = paddingValues,
+                        onNavigateToBatch = { uris ->
+                            batchPhotoViewModel.initializeQueue(uris.map { it.toString() })
+                            isBatchActive = true
+                        }
+                    )
+                }
                 2 -> SavedStatusScreenContent(
                     viewModel = savedStatusViewModel,
                     paddingValues = paddingValues,

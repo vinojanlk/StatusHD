@@ -31,7 +31,11 @@ import com.techwin.statushd.PhotoViewModel
 import com.techwin.statushd.ui.components.*
 
 @Composable
-fun PhotoScreenContent(viewModel: PhotoViewModel, paddingValues: PaddingValues) {
+fun PhotoScreenContent(
+    viewModel: PhotoViewModel, 
+    paddingValues: PaddingValues,
+    onNavigateToBatch: (List<Uri>) -> Unit
+) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
@@ -39,6 +43,14 @@ fun PhotoScreenContent(viewModel: PhotoViewModel, paddingValues: PaddingValues) 
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         uri?.let { viewModel.selectPhoto(it) }
+    }
+
+    val batchPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10)
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            onNavigateToBatch(uris)
+        }
     }
 
     LaunchedEffect(uiState) {
@@ -90,6 +102,22 @@ fun PhotoScreenContent(viewModel: PhotoViewModel, paddingValues: PaddingValues) 
                         icon = Icons.Default.Security,
                         title = "Personal metadata is not copied",
                         subtitle = "Source location and camera details stay out of the optimized copy."
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    StatusPrimaryButton(
+                        text = "Prepare multiple photos",
+                        icon = Icons.Default.Collections,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        onClick = {
+                            batchPickerLauncher.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        }
                     )
 
                     Text(
