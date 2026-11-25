@@ -999,4 +999,99 @@ class BatchPhotoQueueTest {
         val activeSummary = BatchPhotoSummary.fromItems(activeItems)
         assertFalse(activeSummary.isTerminal)
     }
+
+    // 10. Callback Order Tests (4 tests)
+    @Test
+    fun testNormalTwoItemSuccessPublishesFinishedAsFinalSnapshot() {
+        runBlocking {
+            val states = mutableListOf<BatchState>()
+            val fake = FakePhotoPreparer()
+            val runner = BatchPhotoRunner(fake)
+            runner.onSnapshotChanged = { snapshot ->
+                states.add(snapshot.state)
+            }
+            runner.initializeQueue(listOf("1.jpg", "2.jpg"))
+            runner.start(PhotoQualityMode.STATUS_HD)
+
+            assertEquals(BatchState.Finished, states.last())
+            assertFalse(states.dropWhile { it != BatchState.Finished }.any { it == BatchState.Running })
+        }
+    }
+
+    @Test
+    fun testRetryFailedPublishesFinishedAsFinalSnapshot() {
+        runBlocking {
+            val states = mutableListOf<BatchState>()
+            val fake = FakePhotoPreparer()
+            fake.customBehavior = { uri, _ ->
+                if (uri == "2.jpg") BatchPhotoPreparationResult.Failure(PhotoProcessingFailure.SaveFailed)
+                else BatchPhotoPreparationResult.Success("out_$uri", 100, 100, 1000)
+            }
+            val runner = BatchPhotoRunner(fake)
+            runner.onSnapshotChanged = { snapshot ->
+                states.add(snapshot.state)
+            }
+            runner.initializeQueue(listOf("1.jpg", "2.jpg"))
+            runner.start(PhotoQualityMode.STATUS_HD)
+
+            fake.customBehavior = { uri, _ -> BatchPhotoPreparationResult.Success("out_$uri", 100, 100, 1000) }
+            states.clear()
+            runner.retryFailed()
+
+            assertEquals(BatchState.Finished, states.last())
+            assertFalse(states.dropWhile { it != BatchState.Finished }.any { it == BatchState.Running })
+        }
+    }
+
+    @Test
+    fun testStopAfterCurrentStillPublishesFinished() {
+        runBlocking {
+            val states = mutableListOf<BatchState>()
+            val startedGate = CompletableDeferred<Unit>()
+            val itemGate = CompletableDeferred<Unit>()
+            val fake = FakePhotoPreparer()
+            fake.customBehavior = { uri, _ ->
+                if (uri == "1.jpg") {
+                    startedGate.complete(Unit)
+                    itemGate.await()
+                }
+                BatchPhotoPreparationResult.Success("out_$uri", 100, 100, 1000)
+            }
+            val runner = BatchPhotoRunner(fake)
+            runner.onSnapshotChanged = { snapshot ->
+                states.add(snapshot.state)
+            }
+            runner.initializeQueue(listOf("1.jpg", "2.jpg"))
+
+            val dStart = async(Dispatchers.Default) { runner.start(PhotoQualityMode.STATUS_HD) }
+            startedGate.await()
+            runner.stopAfterCurrent()
+            itemGate.complete(Unit)
+            dStart.await()
+
+            assertEquals(BatchState.Finished, states.last())
+        }
+    }
+
+    @Test
+    fun testCallbackOrderNeverReturnsToRunningAfterFinished() {
+        runBlocking {
+            val statesAfterFinished = mutableListOf<BatchState>()
+            var seenFinished = false
+            val fake = FakePhotoPreparer()
+            val runner = BatchPhotoRunner(fake)
+            runner.onSnapshotChanged = { snapshot ->
+                if (seenFinished) {
+                    statesAfterFinished.add(snapshot.state)
+                }
+                if (snapshot.state == BatchState.Finished) {
+                    seenFinished = true
+                }
+            }
+            runner.initializeQueue(listOf("1.jpg", "2.jpg"))
+            runner.start(PhotoQualityMode.STATUS_HD)
+
+            assertFalse(statesAfterFinished.any { it == BatchState.Running })
+        }
+    }
 }

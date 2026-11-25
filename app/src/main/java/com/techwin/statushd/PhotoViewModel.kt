@@ -85,8 +85,9 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     fun startProcessing() {
         val currentState = _uiState.value
         if (currentState !is PhotoUiState.Selected) return
+        if (!PhotoStateReducer.canStartProcessing(currentState, currentJob?.isActive == true)) return
 
-        if (currentJob?.isActive == true) return
+        _uiState.value = PhotoUiState.Processing(0)
 
         val uri = currentState.uri
         val mode = currentState.mode

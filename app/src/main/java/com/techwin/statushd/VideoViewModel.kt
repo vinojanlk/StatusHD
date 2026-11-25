@@ -96,6 +96,7 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startProcessing() {
         val currentState = _uiState.value
+        if (!VideoSharingHelper.canStartVideoProcessing(currentState)) return
         val uri = currentState.selectedVideoUri ?: return
 
         _uiState.update { it.copy(isProcessing = true, progress = 0, error = null, completedUris = emptyList()) }

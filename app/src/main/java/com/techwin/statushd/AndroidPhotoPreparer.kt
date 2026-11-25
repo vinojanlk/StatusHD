@@ -8,8 +8,22 @@ class AndroidPhotoPreparer(private val processor: PhotoProcessor) : PhotoPrepare
         mode: PhotoQualityMode,
         destination: PhotoDestination
     ): BatchPhotoPreparationResult {
-        val uri = Uri.parse(sourceUri)
-        return when (val result = processor.preparePhoto(uri, mode, destination)) {
+        if (sourceUri.isBlank()) {
+            return BatchPhotoPreparationResult.Failure(PhotoProcessingFailure.SourceUnavailable)
+        }
+
+        val parsedUri = try {
+            Uri.parse(sourceUri)
+        } catch (_: Exception) {
+            return BatchPhotoPreparationResult.Failure(PhotoProcessingFailure.SourceUnavailable)
+        }
+
+        val scheme = parsedUri.scheme
+        if (scheme == null || !scheme.equals("content", ignoreCase = true)) {
+            return BatchPhotoPreparationResult.Failure(PhotoProcessingFailure.SourceUnavailable)
+        }
+
+        return when (val result = processor.preparePhoto(parsedUri, mode, PhotoDestination.Batch)) {
             is PhotoProcessingResult.Success -> BatchPhotoPreparationResult.Success(
                 outputIdentifier = result.outputUri.toString(),
                 outputWidth = result.outputWidth,

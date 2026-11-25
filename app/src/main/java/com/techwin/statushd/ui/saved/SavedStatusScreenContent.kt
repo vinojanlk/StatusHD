@@ -153,7 +153,7 @@ fun SavedStatusScreenContent(
                         Text(
                             text = "Save only media you own or have permission to keep.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center
                         )

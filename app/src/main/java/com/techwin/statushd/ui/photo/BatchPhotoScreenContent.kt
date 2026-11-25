@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.text.format.Formatter
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -23,18 +24,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import com.techwin.statushd.BatchItemStatus
 import com.techwin.statushd.BatchPhotoItem
 import com.techwin.statushd.BatchPhotoViewModel
 import com.techwin.statushd.BatchState
+import com.techwin.statushd.ItemSkipReason
 import com.techwin.statushd.ItemState
 import com.techwin.statushd.PhotoQualityMode
-import com.techwin.statushd.ui.components.EmptyState
+import com.techwin.statushd.StopResult
 import com.techwin.statushd.ui.components.QualityOptionCard
 import com.techwin.statushd.ui.components.StatusPrimaryButton
 
@@ -47,7 +48,71 @@ fun BatchPhotoScreenContent(
     val snapshot by viewModel.snapshot.collectAsState()
     val context = LocalContext.current
 
-    val currentSnapshot = snapshot ?: return
+    val currentSnapshot = snapshot
+    if (currentSnapshot == null) {
+        LaunchedEffect(Unit) {
+            onBack()
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+        return
+    }
+
+    val isRunningOrStopping = currentSnapshot.state == BatchState.Running || currentSnapshot.state == BatchState.Stopping
+
+    var pendingNavigationAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showStopConfirmDialog by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = isRunningOrStopping || currentSnapshot.state == BatchState.Draft || currentSnapshot.state == BatchState.Finished) {
+        if (isRunningOrStopping) {
+            showStopConfirmDialog = true
+        } else {
+            viewModel.reset()
+            onBack()
+        }
+    }
+
+    if (showStopConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showStopConfirmDialog = false },
+            title = { Text("Batch processing is active", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground) },
+            text = { Text("Stop batch processing after current photo and leave?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showStopConfirmDialog = false
+                        viewModel.stopAfterCurrent()
+                        pendingNavigationAction = {
+                            viewModel.reset()
+                            onBack()
+                        }
+                    }
+                ) {
+                    Text("Stop after current and leave")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showStopConfirmDialog = false }) {
+                    Text("Stay")
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    }
+
+    LaunchedEffect(currentSnapshot.state, pendingNavigationAction) {
+        if (currentSnapshot.state == BatchState.Finished && pendingNavigationAction != null) {
+            val action = pendingNavigationAction
+            pendingNavigationAction = null
+            action?.invoke()
+        }
+    }
 
     AnimatedContent(
         targetState = currentSnapshot.state,
@@ -314,33 +379,6 @@ fun BatchPhotoScreenContent(
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        if (summary.done > 0) {
-                            OutlinedButton(
-                                onClick = {
-                                    val urisToShare = currentSnapshot.items
-                                        .filter { it.state == ItemState.Done }
-                                        .mapNotNull { it.outputData?.outputIdentifier?.let { id -> Uri.parse(id) } }
-
-                                    if (urisToShare.isNotEmpty()) {
-                                        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-                                            type = "image/jpeg"
-                                            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(urisToShare))
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }
-                                        try {
-                                            context.startActivity(Intent.createChooser(intent, "Share selected photos"))
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "No app available to share", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.weight(1f).height(56.dp),
-                                shape = RoundedCornerShape(18.dp)
-                            ) {
-                                Text("Share selected")
-                            }
-                        }
-
                         if (summary.failed > 0) {
                             Button(
                                 onClick = { viewModel.retryFailed() },
@@ -379,22 +417,27 @@ fun BatchDraftItemRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.background)
-            .padding(8.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AsyncImage(
-            model = Uri.parse(item.sourceIdentifier),
-            contentDescription = null,
+        Box(
             modifier = Modifier
-                .size(60.dp)
+                .size(40.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color.Black),
-            contentScale = ContentScale.Crop
-        )
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Photo,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+        }
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = Uri.parse(item.sourceIdentifier).lastPathSegment ?: "photo.jpg",
+                text = "Photo ${item.originalOrderIndex + 1}",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -415,22 +458,27 @@ fun BatchStatusItemRow(item: BatchPhotoItem) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.background)
-            .padding(8.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AsyncImage(
-            model = Uri.parse(item.sourceIdentifier),
-            contentDescription = null,
+        Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(40.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color.Black),
-            contentScale = ContentScale.Crop
-        )
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Photo,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+        }
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = Uri.parse(item.sourceIdentifier).lastPathSegment ?: "photo.jpg",
+                text = "Photo ${item.originalOrderIndex + 1}",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onBackground,

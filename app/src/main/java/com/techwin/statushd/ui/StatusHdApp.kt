@@ -1,33 +1,36 @@
 package com.techwin.statushd.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MovieFilter
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.techwin.statushd.BatchPhotoSelectionPolicy
+import com.techwin.statushd.BatchPhotoViewModel
 import com.techwin.statushd.PhotoViewModel
 import com.techwin.statushd.VideoViewModel
-import com.techwin.statushd.BatchPhotoViewModel
 import com.techwin.statushd.feature.status.SavedStatusViewModel
-import com.techwin.statushd.ui.photo.PhotoScreenContent
 import com.techwin.statushd.ui.photo.BatchPhotoScreenContent
+import com.techwin.statushd.ui.photo.PhotoScreenContent
 import com.techwin.statushd.ui.saved.SavedStatusScreenContent
 import com.techwin.statushd.ui.video.VideoScreenContent
 
@@ -39,9 +42,10 @@ fun StatusHdApp(
     batchPhotoViewModel: BatchPhotoViewModel = viewModel(),
     savedStatusViewModel: SavedStatusViewModel = viewModel()
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by rememberSaveable { mutableStateOf(0) }
     var showAbout by remember { mutableStateOf(false) }
-    var isBatchActive by remember { mutableStateOf(false) }
+    var isBatchActive by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -158,8 +162,14 @@ fun StatusHdApp(
                         viewModel = photoViewModel,
                         paddingValues = paddingValues,
                         onNavigateToBatch = { uris ->
-                            batchPhotoViewModel.initializeQueue(uris.map { it.toString() })
-                            isBatchActive = true
+                            val identifiers = uris.map { it.toString() }
+                            val policyResult = BatchPhotoSelectionPolicy.validateAndDeduplicate(identifiers)
+                            if (policyResult.isValidForStart) {
+                                batchPhotoViewModel.initializeQueue(identifiers)
+                                isBatchActive = true
+                            } else {
+                                Toast.makeText(context, "Select 2 to 10 photos for a batch.", Toast.LENGTH_LONG).show()
+                            }
                         }
                     )
                 }
