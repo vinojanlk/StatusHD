@@ -1,80 +1,111 @@
-# Status HD
+# StatusHD
 
-Status HD is an experimental Android student project for preparing videos for sharing as WhatsApp Status.
+StatusHD is an experimental native Android student project for preparing photos
+and videos for manual sharing through Android applications such as WhatsApp.
 
-> Status HD prepares videos with the goal of reducing visible quality loss during WhatsApp Status upload.
+> StatusHD prepares media locally with the goal of reducing visible quality loss
+> during status uploads while keeping media selection, Gallery publication, and
+> sharing under the user’s control.
 
 ## Project status
 
-This is a working student project and remains experimental. It is not a production-quality media editor, and output quality, processing time, and WhatsApp's treatment of shared video can vary by source video, device, and app version.
+StatusHD is a working student project and remains experimental.
+
+It is not a production-quality media editor. Output quality, processing time,
+storage behavior, and the treatment of shared media can vary depending on:
+
+- the source media,
+- the Android device,
+- available storage and memory,
+- the selected processing mode,
+- the receiving application,
+- and the receiving application’s current compression behavior.
+
+StatusHD cannot control or guarantee how WhatsApp or another application
+recompresses uploaded media.
 
 ## Features
 
-- **Full HD Detail**: targets a 1080 × 1920 portrait (or 1920 × 1080 landscape) H.264 output profile and splits output at 30-second intervals.
-- **HD Longer Status**: targets a 720 × 1280 portrait (or 1280 × 720 landscape) H.264 output profile and splits output at 60-second intervals.
-- **Preserve Original**: automatically copies the input without transcoding when its duration, dimensions, and reported bitrate fit the selected profile.
-- Background processing with a foreground notification, progress reporting, and cancellation.
-- Automatic segment output for longer videos.
-- Publication of completed MP4 files to the device Gallery through MediaStore.
-- Manual sharing through the Android share intent, targeting WhatsApp when available.
-- Video selection through the Android Photo Picker.
+### Video preparation
 
-The output profiles are targets, not guarantees about final dimensions, bitrate, playback, or WhatsApp upload behavior.
+StatusHD supports two video-processing modes.
 
-## Privacy
+#### Full HD Detail
 
-The app reads the video selected through Android's Photo Picker, processes it locally using the app and its bundled native media libraries, and writes completed output to the device's Movies/HDStatus Gallery location. The project does not implement a video-upload service. Sharing sends selected output to the app chosen by the user, such as WhatsApp; those apps' privacy practices apply after sharing.
+- Targets a `1080 × 1920` portrait output profile
+- Targets a `1920 × 1080` landscape output profile
+- Uses H.264 video encoding
+- Splits longer output into parts of up to 30 seconds
+- Prioritizes additional visual detail
 
-## Technology
+#### HD Longer
 
-- Kotlin and Jetpack Compose
-- AndroidX Lifecycle `ViewModel` with Kotlin `StateFlow`
-- AndroidX WorkManager for background work
-- Android Photo Picker and MediaStore
-- FFmpegKit maintained distribution (`ffmpeg-kit-min-gpl:8.1.9`), FFmpeg, and libx264
-- Minimum Android API 29; target API 35
+- Targets a `720 × 1280` portrait output profile
+- Targets a `1280 × 720` landscape output profile
+- Uses H.264 video encoding
+- Splits longer output into parts of up to 60 seconds
+- Produces fewer parts for longer videos
 
-### Foreground-service compatibility
+The selected-video screen displays an estimated part count based on the source
+duration and the selected mode. This is a segment-count estimate, not an
+estimate of output size or processing time.
 
-The foreground worker uses the `dataSync` foreground-service type on API 29–34 and `mediaProcessing` on API 35 and later. The manifest declares both corresponding foreground-service permissions and service types.
+#### Preserve Original
 
-## Build
+When the source video already fits the selected profile’s duration, dimensions,
+and reported bitrate conditions, StatusHD may copy the source without
+transcoding it.
 
-Install a compatible JDK and Android SDK (including the platform/build tools required by the Gradle configuration), then use the Gradle Wrapper from the project root.
+Preserve Original is an automatic optimization. It is not a separate
+user-selectable quality mode.
 
-**Windows PowerShell**
+### Video processing controls
 
-```powershell
-.\gradlew.bat :app:testDebugUnitTest
-.\gradlew.bat :app:assembleDebug
-```
+- Video selection through Android Photo Picker
+- Persistent **Prepare video** action
+- Background processing through AndroidX WorkManager
+- Foreground notification while processing
+- Current progress reporting
+- User-requested cancellation
+- Automatic segment creation for longer videos
+- Publication of completed MP4 files through MediaStore
+- Output destination: `Movies/HDStatus`
 
-**Linux/macOS**
+### Video sharing
 
-```sh
-./gradlew :app:testDebugUnitTest
-./gradlew :app:assembleDebug
-```
+Completed video parts can be shared manually through the Android Sharesheet.
 
-The wrapper downloads its configured Gradle distribution if it is not already cached. Keep machine-specific SDK configuration in the ignored `local.properties` file; do not commit signing keys or credentials.
+StatusHD supports:
 
-## Limitations
+- sharing one completed video part,
+- sharing individual parts separately,
+- and sharing multiple completed parts together.
 
-- This is an experimental student project; processing and behavior have not been validated across all Android devices or source formats.
-- Segment boundaries can vary with source media and the segment muxer; verify duration and playback for the intended sharing workflow.
-- Audio synchronization, cancellation timing, storage behavior, and WhatsApp handling should be tested on a physical device.
-- WhatsApp may transcode or recompress shared videos. Status HD cannot control or guarantee the result.
-- Preserve Original is conditional and is not a user-selectable standalone quality profile.
-- The project does not currently include an automated physical-device test suite.
+One part uses `ACTION_SEND`. Multiple parts use `ACTION_SEND_MULTIPLE` with
+ordered MediaStore content URIs and temporary read permission.
 
-## Screenshots
+StatusHD does not automatically send media, control WhatsApp, or hardcode a
+specific receiving application.
 
-Screenshots are intentionally not included automatically. See [docs/screenshots/README.md](docs/screenshots/README.md) for the manual review requirements and relative screenshot path.
+### Photo preparation
 
-## Third-party licensing
+StatusHD supports JPEG photo preparation with two quality modes.
 
-See [NOTICE.md](NOTICE.md) and [LICENSE-REVIEW.md](LICENSE-REVIEW.md) for the resolved FFmpegKit dependency metadata, third-party notices, and the project's pending license review. No project license has been selected pending confirmation of the applicable GPL obligations.
+#### Status HD
 
-## Disclaimer
+- JPEG quality 90
+- Fits portrait and square photos within `1080 × 1920`
+- Fits landscape photos within `1920 × 1080`
+- Preserves aspect ratio
+- Does not crop, stretch, or upscale
 
-Status HD is an independent experimental project and is not affiliated with, endorsed by or sponsored by WhatsApp or Meta.
+#### Smaller File
+
+- JPEG quality 80
+- Uses the same dimension and aspect-ratio rules
+- Produces a smaller file in many cases, depending on the source image
+
+Single-photo outputs are published to:
+
+```text
+Pictures/StatusHD
