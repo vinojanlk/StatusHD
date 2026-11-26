@@ -28,6 +28,7 @@ fun StatusHeroCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
+            .background(Color(0xFF070A11))
             .background(Brush.linearGradient(gradientColors))
             .padding(24.dp)
     ) {

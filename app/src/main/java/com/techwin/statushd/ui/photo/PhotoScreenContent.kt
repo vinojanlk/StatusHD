@@ -83,17 +83,21 @@ fun PhotoScreenContent(
                     tonalElevation = 8.dp,
                     shadowElevation = 8.dp
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
-                    ) {
-                        StatusPrimaryButton(
-                            text = "Prepare photo",
-                            enabled = isSelected && !isProcessing,
-                            onClick = { viewModel.startProcessing() },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 12.dp)
+                        ) {
+                            StatusPrimaryButton(
+                                text = "Prepare photo",
+                                enabled = isSelected && !isProcessing,
+                                onClick = { viewModel.startProcessing() },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
                 }
             }

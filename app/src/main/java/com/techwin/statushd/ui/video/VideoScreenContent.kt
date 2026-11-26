@@ -175,17 +175,21 @@ fun VideoScreenContent(viewModel: VideoViewModel, paddingValues: PaddingValues) 
                     tonalElevation = 8.dp,
                     shadowElevation = 8.dp
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
-                    ) {
-                        StatusPrimaryButton(
-                            text = "Prepare video",
-                            enabled = !isProcessing,
-                            onClick = { viewModel.startProcessing() },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 12.dp)
+                        ) {
+                            StatusPrimaryButton(
+                                text = "Prepare video",
+                                enabled = !isProcessing,
+                                onClick = { viewModel.startProcessing() },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
                 }
             }
@@ -546,7 +550,7 @@ fun VideoScreenContent(viewModel: VideoViewModel, paddingValues: PaddingValues) 
                         Text(
                             text = "Final upload quality is controlled by the receiving platform.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center
                         )

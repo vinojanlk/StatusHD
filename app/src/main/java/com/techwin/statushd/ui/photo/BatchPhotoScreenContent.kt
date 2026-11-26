@@ -384,7 +384,10 @@ fun BatchPhotoScreenContent(
                                 onClick = { viewModel.retryFailed() },
                                 modifier = Modifier.weight(1f).height(56.dp),
                                 shape = RoundedCornerShape(18.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error,
+                                    contentColor = MaterialTheme.colorScheme.onError
+                                )
                             ) {
                                 Text("Retry failed")
                             }

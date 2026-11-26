@@ -120,7 +120,7 @@ fun PhotoHeroGraphic() {
             shape = RoundedCornerShape(8.dp),
             modifier = Modifier.align(Alignment.BottomEnd).offset(x = 5.dp, y = 5.dp).zIndex(2f)
         ) {
-            Text("90", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+            Text("90", color = MaterialTheme.colorScheme.onTertiary, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
         }
 
         Surface(
@@ -181,7 +181,7 @@ fun SavedHeroGraphic() {
             modifier = Modifier.align(Alignment.BottomCenter).offset(y = 10.dp).size(32.dp).zIndex(2f)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiary, modifier = Modifier.size(18.dp))
             }
         }
     }
