@@ -38,6 +38,8 @@ import com.techwin.statushd.PhotoQualityMode
 import com.techwin.statushd.StopResult
 import com.techwin.statushd.ui.components.QualityOptionCard
 import com.techwin.statushd.ui.components.StatusPrimaryButton
+import com.techwin.statushd.ui.components.StorageLowWarningBanner
+import com.techwin.statushd.ui.components.StoragePreflightDialog
 
 @Composable
 fun BatchPhotoScreenContent(
@@ -46,6 +48,10 @@ fun BatchPhotoScreenContent(
     onBack: () -> Unit
 ) {
     val snapshot by viewModel.snapshot.collectAsState()
+    val draftMode by viewModel.draftMode.collectAsState()
+    val preflightPrompt by viewModel.preflightPrompt.collectAsState()
+    val isCheckingStorage by viewModel.isCheckingStorage.collectAsState()
+    val lowStorageWarning by viewModel.lowStorageWarning.collectAsState()
     val context = LocalContext.current
 
     val currentSnapshot = snapshot
@@ -116,6 +122,13 @@ fun BatchPhotoScreenContent(
         }
     }
 
+    StoragePreflightDialog(
+        prompt = preflightPrompt,
+        onContinueUnavailable = { viewModel.continueAfterUnavailableStorage() },
+        onDismissForManageStorage = { viewModel.dismissStoragePrompt() },
+        onCancel = { viewModel.dismissStoragePrompt() }
+    )
+
     AnimatedContent(
         targetState = currentSnapshot.state,
         transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
@@ -123,7 +136,6 @@ fun BatchPhotoScreenContent(
     ) { state ->
         when (state) {
             BatchState.Draft -> {
-                var selectedMode by remember { mutableStateOf(PhotoQualityMode.STATUS_HD) }
 
                 Column(
                     modifier = Modifier
@@ -187,8 +199,8 @@ fun BatchPhotoScreenContent(
                         tertiaryText = "",
                         icon = Icons.Default.HighQuality,
                         accentColor = MaterialTheme.colorScheme.primary,
-                        isSelected = selectedMode == PhotoQualityMode.STATUS_HD,
-                        onClick = { selectedMode = PhotoQualityMode.STATUS_HD }
+                        isSelected = draftMode == PhotoQualityMode.STATUS_HD,
+                        onClick = { viewModel.setDraftMode(PhotoQualityMode.STATUS_HD) }
                     )
 
                     QualityOptionCard(
@@ -199,13 +211,14 @@ fun BatchPhotoScreenContent(
                         tertiaryText = "",
                         icon = Icons.Default.Compress,
                         accentColor = MaterialTheme.colorScheme.secondary,
-                        isSelected = selectedMode == PhotoQualityMode.SMALLER_FILE,
-                        onClick = { selectedMode = PhotoQualityMode.SMALLER_FILE }
+                        isSelected = draftMode == PhotoQualityMode.SMALLER_FILE,
+                        onClick = { viewModel.setDraftMode(PhotoQualityMode.SMALLER_FILE) }
                     )
 
                     StatusPrimaryButton(
                         text = "Prepare ${currentSnapshot.items.size} photos",
-                        onClick = { viewModel.startBatch(selectedMode) }
+                        enabled = !isCheckingStorage,
+                        onClick = { viewModel.startBatch(draftMode) }
                     )
                 }
             }
@@ -252,6 +265,10 @@ fun BatchPhotoScreenContent(
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
+
+                    lowStorageWarning?.let { warning ->
+                        StorageLowWarningBanner(warning = warning)
+                    }
 
                     LazyColumn(
                         modifier = Modifier

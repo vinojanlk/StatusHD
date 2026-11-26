@@ -50,6 +50,9 @@ data class VideoPartMetadata(
 @Composable
 fun VideoScreenContent(viewModel: VideoViewModel, paddingValues: PaddingValues) {
     val uiState by viewModel.uiState.collectAsState()
+    val preflightPrompt by viewModel.preflightPrompt.collectAsState()
+    val isCheckingStorage by viewModel.isCheckingStorage.collectAsState()
+    val lowStorageWarning by viewModel.lowStorageWarning.collectAsState()
     val context = LocalContext.current
 
     val launcher = rememberLauncherForActivityResult(
@@ -94,7 +97,7 @@ fun VideoScreenContent(viewModel: VideoViewModel, paddingValues: PaddingValues) 
     val hasSelection = uiState.selectedVideoUri != null
     val isProcessing = uiState.isProcessing
     val isSuccess = uiState.completedUris.isNotEmpty()
-    val showPersistentBar = hasSelection && !isSuccess
+    val showPersistentBar = hasSelection && !isProcessing && !isSuccess
 
     val partMetadataList by produceState<List<VideoPartMetadata>>(initialValue = emptyList(), uiState.completedUris) {
         if (uiState.completedUris.isEmpty()) {
@@ -184,7 +187,7 @@ fun VideoScreenContent(viewModel: VideoViewModel, paddingValues: PaddingValues) 
                         ) {
                             StatusPrimaryButton(
                                 text = "Prepare video",
-                                enabled = !isProcessing,
+                                enabled = !isCheckingStorage,
                                 onClick = { viewModel.startProcessing() },
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -220,22 +223,37 @@ fun VideoScreenContent(viewModel: VideoViewModel, paddingValues: PaddingValues) 
             ) {
                 when {
                     processing -> {
-                        Spacer(modifier = Modifier.height(32.dp))
-                        ProcessingStage(
-                            headline = "Preparing your video",
-                            subtext = "",
-                            progress = uiState.progress / 100f,
-                            stages = listOf("Preparing", "Encoding", "Saving"),
-                            currentStageIndex = if (uiState.progress < 10) 0 else if (uiState.progress < 90) 1 else 2
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        OutlinedButton(
-                            onClick = { viewModel.cancelProcessing() },
-                            modifier = Modifier.fillMaxWidth().height(50.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = false),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text("Cancel")
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(24.dp)
+                            ) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                ProcessingStage(
+                                    headline = "Preparing your video",
+                                    subtext = "",
+                                    progress = uiState.progress / 100f,
+                                    stages = listOf("Preparing", "Encoding", "Saving"),
+                                    currentStageIndex = if (uiState.progress < 10) 0 else if (uiState.progress < 90) 1 else 2
+                                )
+                                lowStorageWarning?.let { warning ->
+                                    StorageLowWarningBanner(warning = warning)
+                                }
+                                OutlinedButton(
+                                    onClick = { viewModel.cancelProcessing() },
+                                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                                ) {
+                                    Text("Cancel")
+                                }
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
                         }
-                        Spacer(modifier = Modifier.height(32.dp))
                     }
 
                     success -> {
@@ -559,6 +577,13 @@ fun VideoScreenContent(viewModel: VideoViewModel, paddingValues: PaddingValues) 
             }
         }
     }
+
+    StoragePreflightDialog(
+        prompt = preflightPrompt,
+        onContinueUnavailable = { viewModel.continueAfterUnavailableStorage() },
+        onDismissForManageStorage = { viewModel.dismissStoragePrompt() },
+        onCancel = { viewModel.dismissStoragePrompt() }
+    )
 }
 
 private fun openGallery(context: Context) {

@@ -4,6 +4,17 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.techwin.statushd.storage.AndroidSourceSizeProvider
+import com.techwin.statushd.storage.AvailableStorageProvider
+import com.techwin.statushd.storage.PhotoEstimateInput
+import com.techwin.statushd.storage.SourceSizeProvider
+import com.techwin.statushd.storage.StorageEstimatePolicy
+import com.techwin.statushd.storage.StorageLowWarning
+import com.techwin.statushd.storage.StoragePreflightChecker
+import com.techwin.statushd.storage.StoragePreflightGate
+import com.techwin.statushd.storage.StoragePreflightPrompt
+import com.techwin.statushd.storage.StoragePreflightTestHooks
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -39,21 +50,65 @@ enum class PhotoQualityMode(val title: String, val desc: String, val quality: In
     SMALLER_FILE("Smaller File", "Same dimensions, Quality 80", 80)
 }
 
-class PhotoViewModel(application: Application) : AndroidViewModel(application) {
+interface PhotoProcessorGateway {
+    suspend fun inspectSource(uri: Uri): PhotoInspectionResult
+    suspend fun preparePhoto(
+        sourceUri: Uri,
+        mode: PhotoQualityMode,
+        destination: PhotoDestination,
+        onProgress: (Int) -> Unit
+    ): PhotoProcessingResult
+}
+
+private class DefaultPhotoProcessorGateway(
+    private val processor: PhotoProcessor
+) : PhotoProcessorGateway {
+    override suspend fun inspectSource(uri: Uri): PhotoInspectionResult =
+        processor.inspectSource(uri)
+
+    override suspend fun preparePhoto(
+        sourceUri: Uri,
+        mode: PhotoQualityMode,
+        destination: PhotoDestination,
+        onProgress: (Int) -> Unit
+    ): PhotoProcessingResult =
+        processor.preparePhoto(
+            sourceUri = sourceUri,
+            mode = mode,
+            destination = destination,
+            onProgress = onProgress
+        )
+}
+
+class PhotoViewModel @JvmOverloads constructor(
+    application: Application,
+    availableStorageProvider: AvailableStorageProvider = StoragePreflightTestHooks.resolveStorageProvider(application),
+    private val sourceSizeProvider: SourceSizeProvider = AndroidSourceSizeProvider(application),
+    private val processorGateway: PhotoProcessorGateway = DefaultPhotoProcessorGateway(PhotoProcessor(application)),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow<PhotoUiState>(PhotoUiState.Idle)
     val uiState: StateFlow<PhotoUiState> = _uiState.asStateFlow()
 
+    private val preflightGate = StoragePreflightGate(
+        scope = viewModelScope,
+        storagePreflightChecker = StoragePreflightChecker(availableStorageProvider)
+    )
+
+    val preflightPrompt: StateFlow<StoragePreflightPrompt?> = preflightGate.prompt
+    val isCheckingStorage: StateFlow<Boolean> = preflightGate.isChecking
+    val lowStorageWarning: StateFlow<StorageLowWarning?> = preflightGate.lowStorageWarning
+
     private var currentJob: Job? = null
     private var lastSelectedState: PhotoUiState.Selected? = null
 
-    private val processor = PhotoProcessor(application)
-
     fun selectPhoto(uri: Uri) {
-        if (currentJob?.isActive == true) return
+        if (currentJob?.isActive == true || preflightGate.isChecking.value) return
+        preflightGate.clearAll()
 
-        viewModelScope.launch(Dispatchers.IO) {
-            when (val result = processor.inspectSource(uri)) {
+        viewModelScope.launch(ioDispatcher) {
+            when (val result = processorGateway.inspectSource(uri)) {
                 is PhotoInspectionResult.Success -> {
                     val selectedState = PhotoUiState.Selected(
                         uri = result.uri,
@@ -73,9 +128,10 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setMode(mode: PhotoQualityMode) {
-        if (currentJob?.isActive == true) return
+        if (currentJob?.isActive == true || preflightGate.isChecking.value) return
         val currentState = _uiState.value
         if (currentState is PhotoUiState.Selected) {
+            preflightGate.dismissPrompt()
             val updated = currentState.copy(mode = mode)
             lastSelectedState = updated
             _uiState.value = updated
@@ -87,14 +143,50 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
         if (currentState !is PhotoUiState.Selected) return
         if (!PhotoStateReducer.canStartProcessing(currentState, currentJob?.isActive == true)) return
 
+        preflightGate.requestStart(
+            canStart = {
+                val latest = _uiState.value
+                latest is PhotoUiState.Selected &&
+                    PhotoStateReducer.canStartProcessing(latest, currentJob?.isActive == true)
+            },
+            estimateRequired = {
+                val latest = _uiState.value as? PhotoUiState.Selected ?: currentState
+                val queriedSize = sourceSizeProvider.querySizeBytes(latest.uri.toString())
+                val effectiveSourceSize = queriedSize ?: latest.inputSize.takeIf { it > 0L }
+                StorageEstimatePolicy.estimateSinglePhoto(
+                    input = PhotoEstimateInput(
+                        sourceSizeBytes = effectiveSourceSize,
+                        width = latest.inputWidth,
+                        height = latest.inputHeight
+                    ),
+                    mode = latest.mode
+                )
+            },
+            onProceed = {
+                val latest = _uiState.value as? PhotoUiState.Selected ?: return@requestStart
+                launchPhotoProcessing(latest)
+            }
+        )
+    }
+
+    fun continueAfterUnavailableStorage() {
+        preflightGate.continueAfterUnavailable()
+    }
+
+    fun dismissStoragePrompt() {
+        preflightGate.dismissPrompt()
+    }
+
+    private fun launchPhotoProcessing(selectedState: PhotoUiState.Selected) {
+        if (!PhotoStateReducer.canStartProcessing(selectedState, currentJob?.isActive == true)) return
         _uiState.value = PhotoUiState.Processing(0)
 
-        val uri = currentState.uri
-        val mode = currentState.mode
+        val uri = selectedState.uri
+        val mode = selectedState.mode
 
-        val job = viewModelScope.launch(Dispatchers.IO) {
+        val job = viewModelScope.launch(ioDispatcher) {
             try {
-                val result = processor.preparePhoto(
+                val result = processorGateway.preparePhoto(
                     sourceUri = uri,
                     mode = mode,
                     destination = PhotoDestination.Single,
@@ -109,6 +201,7 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
 
                 when (result) {
                     is PhotoProcessingResult.Success -> {
+                        preflightGate.clearWarning()
                         _uiState.value = PhotoUiState.Saved(
                             outputUri = result.outputUri,
                             outputWidth = result.outputWidth,
@@ -117,6 +210,7 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
                     is PhotoProcessingResult.Failure -> {
+                        preflightGate.clearWarning()
                         if (result.failure != PhotoProcessingFailure.Canceled) {
                             _uiState.value = PhotoUiState.Error(PhotoProcessingUiMapper.mapFailureToUserMessage(result.failure))
                         }
@@ -147,6 +241,7 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
                 if (currentJob == jobToCancel) {
                     currentJob = null
                 }
+                preflightGate.clearWarning()
                 _uiState.value = PhotoStateReducer.onCancelCompleted(previousSelected)
             }
         }
@@ -154,6 +249,7 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
 
     fun reset() {
         if (currentJob?.isActive == true) return
+        preflightGate.clearAll()
         _uiState.value = PhotoUiState.Idle
         lastSelectedState = null
     }

@@ -8,6 +8,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -19,6 +22,8 @@ fun ProcessingStage(
     currentStageIndex: Int,
     modifier: Modifier = Modifier
 ) {
+    val clampedProgress = progress.coerceIn(0f, 1f)
+
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -40,16 +45,26 @@ fun ProcessingStage(
             }
         }
 
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(120.dp)) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(120.dp)
+                .semantics {
+                    progressBarRangeInfo = ProgressBarRangeInfo(
+                        current = clampedProgress,
+                        range = 0f..1f
+                    )
+                }
+        ) {
             CircularProgressIndicator(
-                progress = { progress },
+                progress = { clampedProgress },
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
                 strokeWidth = 8.dp
             )
             Text(
-                text = "${(progress * 100).toInt()}%",
+                text = "${(clampedProgress * 100).toInt()}%",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground
             )

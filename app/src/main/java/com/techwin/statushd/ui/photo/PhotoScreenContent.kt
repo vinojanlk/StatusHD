@@ -37,6 +37,9 @@ fun PhotoScreenContent(
     onNavigateToBatch: (List<Uri>) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val preflightPrompt by viewModel.preflightPrompt.collectAsState()
+    val isCheckingStorage by viewModel.isCheckingStorage.collectAsState()
+    val lowStorageWarning by viewModel.lowStorageWarning.collectAsState()
     val context = LocalContext.current
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -92,7 +95,7 @@ fun PhotoScreenContent(
                         ) {
                             StatusPrimaryButton(
                                 text = "Prepare photo",
-                                enabled = isSelected && !isProcessing,
+                                enabled = isSelected && !isProcessing && !isCheckingStorage,
                                 onClick = { viewModel.startProcessing() },
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -272,6 +275,9 @@ fun PhotoScreenContent(
                             stages = listOf("Reading", "Resizing", "Saving"),
                             currentStageIndex = currentStageIndex
                         )
+                        lowStorageWarning?.let { warning ->
+                            StorageLowWarningBanner(warning = warning)
+                        }
                         Spacer(modifier = Modifier.height(24.dp))
                         if (state !is PhotoUiState.Canceling) {
                             OutlinedButton(
@@ -328,4 +334,11 @@ fun PhotoScreenContent(
             }
         }
     }
+
+    StoragePreflightDialog(
+        prompt = preflightPrompt,
+        onContinueUnavailable = { viewModel.continueAfterUnavailableStorage() },
+        onDismissForManageStorage = { viewModel.dismissStoragePrompt() },
+        onCancel = { viewModel.dismissStoragePrompt() }
+    )
 }

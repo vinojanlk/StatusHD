@@ -52,8 +52,20 @@ fun StatusHdApp(
     var selectedTab by rememberSaveable { mutableStateOf(0) }
     var showAbout by remember { mutableStateOf(false) }
     var isBatchActive by rememberSaveable { mutableStateOf(false) }
+    var pendingNavigationTab by remember { mutableStateOf<Int?>(null) }
     val context = LocalContext.current
     val currentThemeMode by appearanceViewModel.themeMode.collectAsStateWithLifecycle()
+    val videoUiState by videoViewModel.uiState.collectAsStateWithLifecycle()
+    val isVideoProcessing = videoUiState.isProcessing
+
+    fun handleTabClick(targetTab: Int) {
+        if (selectedTab == targetTab) return
+        if (selectedTab == 0 && isVideoProcessing) {
+            pendingNavigationTab = targetTab
+        } else {
+            selectedTab = targetTab
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -118,7 +130,7 @@ fun StatusHdApp(
                 ) {
                     NavigationBarItem(
                         selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
+                        onClick = { handleTabClick(0) },
                         icon = { Icon(Icons.Default.VideoLibrary, contentDescription = "Video") },
                         label = { Text("Video", fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal) },
                         colors = NavigationBarItemDefaults.colors(
@@ -131,7 +143,7 @@ fun StatusHdApp(
                     )
                     NavigationBarItem(
                         selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
+                        onClick = { handleTabClick(1) },
                         icon = { Icon(Icons.Default.PhotoLibrary, contentDescription = "Photo") },
                         label = { Text("Photo", fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal) },
                         colors = NavigationBarItemDefaults.colors(
@@ -144,7 +156,7 @@ fun StatusHdApp(
                     )
                     NavigationBarItem(
                         selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
+                        onClick = { handleTabClick(2) },
                         icon = { Icon(Icons.Default.BookmarkBorder, contentDescription = "Saved") },
                         label = { Text("Saved", fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal) },
                         colors = NavigationBarItemDefaults.colors(
@@ -201,6 +213,45 @@ fun StatusHdApp(
                     }
                 )
             }
+        }
+
+        if (pendingNavigationTab != null) {
+            AlertDialog(
+                onDismissRequest = { pendingNavigationTab = null },
+                title = {
+                    Text(
+                        text = "Video preparation is active",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Leave this screen while StatusHD continues preparing the video?",
+                        modifier = Modifier.verticalScroll(rememberScrollState())
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val target = pendingNavigationTab ?: 0
+                            pendingNavigationTab = null
+                            selectedTab = target
+                        }
+                    ) {
+                        Text("Continue in background")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = { pendingNavigationTab = null }
+                    ) {
+                        Text("Stay")
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         if (showAbout) {
