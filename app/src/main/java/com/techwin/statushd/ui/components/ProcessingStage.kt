@@ -42,7 +42,7 @@ fun ProcessingStage(
 
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(120.dp)) {
             CircularProgressIndicator(
-                progress = progress,
+                progress = { progress },
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant,

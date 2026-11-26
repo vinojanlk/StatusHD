@@ -1,40 +1,38 @@
 package com.techwin.statushd.ui.theme
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
     primary = PrimaryGreen,
     onPrimary = BgDark,
-    primaryContainer = SurfaceElevated,
-    onPrimaryContainer = PrimaryGreen,
+    primaryContainer = PrimaryContainerDark,
+    onPrimaryContainer = TextPrimary,
     secondary = AccentBlue,
     onSecondary = BgDark,
+    secondaryContainer = SecondaryContainerDark,
+    onSecondaryContainer = OnSecondaryContainerDark,
     tertiary = AccentWarm,
     onTertiary = BgDark,
     background = BgDark,
     onBackground = TextPrimary,
     surface = SurfaceDark,
     onSurface = TextPrimary,
+    surfaceContainerLow = SurfaceDark,
+    surfaceContainer = SurfaceDark,
+    surfaceContainerHigh = SurfaceElevated,
     surfaceVariant = SurfaceElevated,
     onSurfaceVariant = TextSecondary,
     outline = OutlineDark,
-    outlineVariant = OutlineDark.copy(alpha = 0.5f),
+    outlineVariant = OutlineDark,
     error = ErrorRed,
     onError = Color.White,
     errorContainer = ErrorRed.copy(alpha = 0.1f),
-    onErrorContainer = ErrorRed
+    onErrorContainer = ErrorRed,
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -44,12 +42,17 @@ private val LightColorScheme = lightColorScheme(
     onPrimaryContainer = OnPrimaryContainerLight,
     secondary = AccentBlueLight,
     onSecondary = Color.White,
+    secondaryContainer = SecondaryContainerLight,
+    onSecondaryContainer = OnSecondaryContainerLight,
     tertiary = AccentWarmLight,
     onTertiary = Color.White,
     background = BgLight,
     onBackground = TextPrimaryLight,
     surface = SurfaceLight,
     onSurface = TextPrimaryLight,
+    surfaceContainerLow = SurfaceContainerLowLight,
+    surfaceContainer = SurfaceLight,
+    surfaceContainerHigh = SurfaceElevatedLight,
     surfaceVariant = SurfaceElevatedLight,
     onSurfaceVariant = TextSecondaryLight,
     outline = OutlineLight,
@@ -66,28 +69,10 @@ fun StatusHDTheme(
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = view.context.findActivity()?.window ?: return@SideEffect
-            window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
-            WindowCompat.setDecorFitsSystemWindows(window, false)
-            val insetsController = WindowCompat.getInsetsController(window, view)
-            insetsController.isAppearanceLightStatusBars = !darkTheme
-            insetsController.isAppearanceLightNavigationBars = !darkTheme
-        }
-    }
 
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
         content = content
     )
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }

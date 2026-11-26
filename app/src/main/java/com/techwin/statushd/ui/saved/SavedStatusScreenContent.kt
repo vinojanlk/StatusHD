@@ -218,7 +218,7 @@ fun SavedStatusScreenContent(
                                     DropdownMenu(
                                         expanded = menuExpanded,
                                         onDismissRequest = { menuExpanded = false },
-                                        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                                        containerColor = MaterialTheme.colorScheme.surface
                                     ) {
                                         DropdownMenuItem(
                                             text = { Text("Change folder", color = MaterialTheme.colorScheme.onBackground) },
@@ -327,8 +327,8 @@ fun SavedStatusScreenContent(
                                     Text("Cancel")
                                 }
                             },
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            titleContentColor = MaterialTheme.colorScheme.onBackground,
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
                             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }

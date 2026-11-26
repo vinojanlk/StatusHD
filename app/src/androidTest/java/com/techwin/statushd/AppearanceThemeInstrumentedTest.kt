@@ -7,16 +7,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
-import android.graphics.Color
 import android.graphics.Rect
 import android.os.Handler
 import android.os.HandlerThread
-import android.os.Looper
 import android.os.SystemClock
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
 import android.view.inspector.WindowInspector
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
@@ -31,13 +30,18 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.techwin.statushd.ui.theme.AppThemeMode
+import com.techwin.statushd.ui.theme.AppearanceViewModel
+import com.techwin.statushd.ui.theme.PrimaryContainerDark
+import com.techwin.statushd.ui.theme.PrimaryContainerLight
+import com.techwin.statushd.ui.theme.SurfaceContainerLowLight
+import com.techwin.statushd.ui.theme.SurfaceDark
 import com.techwin.statushd.ui.theme.ThemePreferenceRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -46,6 +50,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 @RunWith(AndroidJUnit4::class)
 class AppearanceThemeInstrumentedTest {
@@ -54,6 +59,7 @@ class AppearanceThemeInstrumentedTest {
     private lateinit var repository: ThemePreferenceRepository
     private lateinit var fixtures: MediaStoreTestFixtures
     private var originalNightMode: String = "no"
+    private var originalFontScale: String = "1.0"
 
     @Before
     fun setUp() = runBlocking {
@@ -61,6 +67,7 @@ class AppearanceThemeInstrumentedTest {
         repository = ThemePreferenceRepository(context)
         fixtures = MediaStoreTestFixtures(context)
         originalNightMode = readEmulatorNightMode()
+        originalFontScale = readFontScale()
         repository.setThemeMode(AppThemeMode.SYSTEM)
     }
 
@@ -69,6 +76,7 @@ class AppearanceThemeInstrumentedTest {
         try {
             repository.setThemeMode(AppThemeMode.SYSTEM)
             setEmulatorNightMode(originalNightMode)
+            setFontScale(originalFontScale)
         } finally {
             fixtures.cleanup()
             assertEquals(
@@ -85,34 +93,58 @@ class AppearanceThemeInstrumentedTest {
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             waitUntilScreenTheme(scenario, expectDark = false)
-
-            openAboutSheet(scenario)
-            waitUntil(10_000L) {
-                var selected = false
-                scenario.onActivity { activity ->
-                    val texts = findAllComposeTexts(activity)
-                    selected = "Appearance" in texts &&
-                        "System default" in texts &&
-                        "Light" in texts &&
-                        "Dark" in texts &&
-                        isComposeNodeSelected(activity, "System default")
-                }
-                selected
-            }
+            waitUntilOrbContentDescription(scenario, "Appearance: System default")
+            assertEquals(AppThemeMode.SYSTEM, repository.themeMode.first())
         } finally {
             scenario.close()
         }
     }
 
     @Test
-    fun systemDefault_followsSystemDark_andReactsToSystemChange() = runBlocking {
+    fun aboutSheet_doesNotContainAppearanceSelector_andShowsDisclaimers() = runBlocking {
+        setEmulatorNightMode("no")
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        try {
+            openAboutSheet(scenario)
+            waitUntil(10_000L) {
+                var ok = false
+                scenario.onActivity { activity ->
+                    val texts = findAllComposeTexts(activity)
+                    val descs = findAllContentDescriptions(activity)
+                    ok = "About StatusHD" in texts &&
+                        "StatusHD prepares media locally on your device." in texts &&
+                        "Messaging platforms may apply additional compression." in texts &&
+                        "StatusHD is an independent project and is not affiliated with, endorsed by or sponsored by WhatsApp or Meta." in texts &&
+                        "Appearance" !in texts &&
+                        "Follow the device appearance setting" !in texts &&
+                        "Always use the light appearance" !in texts &&
+                        "Always use the dark appearance" !in texts &&
+                        "System default" !in descs
+                }
+                ok
+            }
+            dismissAboutSheet(scenario)
+        } finally {
+            scenario.close()
+        }
+    }
+
+    @Test
+    fun systemDefault_followsSystemDark_andOrbRemainsSystem() = runBlocking {
         setEmulatorNightMode("no")
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             waitUntilScreenTheme(scenario, expectDark = false)
+            waitUntilOrbContentDescription(scenario, "Appearance: System default")
 
             setEmulatorNightMode("yes")
             waitUntilScreenTheme(scenario, expectDark = true)
+            waitUntilOrbContentDescription(scenario, "Appearance: System default")
+            assertEquals(AppThemeMode.SYSTEM, repository.themeMode.first())
+
+            setEmulatorNightMode("no")
+            waitUntilScreenTheme(scenario, expectDark = false)
+            waitUntilOrbContentDescription(scenario, "Appearance: System default")
         } finally {
             scenario.close()
         }
@@ -125,12 +157,9 @@ class AppearanceThemeInstrumentedTest {
         try {
             waitUntilScreenTheme(scenario, expectDark = true)
 
-            openAboutSheet(scenario)
-            clickOptionInAboutSheet(scenario, "Light")
-            waitUntil(10_000L) { repository.themeMode.first() == AppThemeMode.LIGHT }
-            dismissAboutSheet(scenario)
-
+            selectThemeModeViaOrbMenu(scenario, AppThemeMode.LIGHT)
             waitUntilScreenTheme(scenario, expectDark = false)
+            waitUntilOrbContentDescription(scenario, "Appearance: Light")
         } finally {
             scenario.close()
         }
@@ -143,13 +172,188 @@ class AppearanceThemeInstrumentedTest {
         try {
             waitUntilScreenTheme(scenario, expectDark = false)
 
-            openAboutSheet(scenario)
-            clickOptionInAboutSheet(scenario, "Dark")
-            waitUntil(10_000L) { repository.themeMode.first() == AppThemeMode.DARK }
-            dismissAboutSheet(scenario)
-
+            selectThemeModeViaOrbMenu(scenario, AppThemeMode.DARK)
             waitUntilScreenTheme(scenario, expectDark = true)
+            waitUntilOrbContentDescription(scenario, "Appearance: Dark")
         } finally {
+            scenario.close()
+        }
+    }
+
+    @Test
+    fun themeOrb_cyclesModesThroughViewModel() = runBlocking {
+        setEmulatorNightMode("no")
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        try {
+            waitUntilOrbContentDescription(scenario, "Appearance: System default")
+            lateinit var viewModel: AppearanceViewModel
+            scenario.onActivity { activity ->
+                viewModel = ViewModelProvider(activity)[AppearanceViewModel::class.java]
+            }
+            assertEquals(AppThemeMode.SYSTEM, viewModel.themeMode.value)
+
+            // 1. Tap orb: SYSTEM -> LIGHT
+            clickThemeOrb(scenario, expectedCurrentDesc = "Appearance: System default")
+            waitUntil(10_000L) {
+                viewModel.themeMode.value == AppThemeMode.LIGHT &&
+                    repository.themeMode.first() == AppThemeMode.LIGHT
+            }
+            waitUntilOrbContentDescription(scenario, "Appearance: Light")
+            waitUntilScreenTheme(scenario, expectDark = false)
+
+            // 2. Tap orb: LIGHT -> DARK
+            clickThemeOrb(scenario, expectedCurrentDesc = "Appearance: Light")
+            waitUntil(10_000L) {
+                viewModel.themeMode.value == AppThemeMode.DARK &&
+                    repository.themeMode.first() == AppThemeMode.DARK
+            }
+            waitUntilOrbContentDescription(scenario, "Appearance: Dark")
+            waitUntilScreenTheme(scenario, expectDark = true)
+
+            // 3. Tap orb: DARK -> SYSTEM
+            clickThemeOrb(scenario, expectedCurrentDesc = "Appearance: Dark")
+            waitUntil(10_000L) {
+                viewModel.themeMode.value == AppThemeMode.SYSTEM &&
+                    repository.themeMode.first() == AppThemeMode.SYSTEM
+            }
+            waitUntilOrbContentDescription(scenario, "Appearance: System default")
+            waitUntilScreenTheme(scenario, expectDark = false)
+        } finally {
+            scenario.close()
+        }
+    }
+
+    @Test
+    fun themeOrb_directMenuSelectsSystemLightAndDark() = runBlocking {
+        setEmulatorNightMode("no")
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        try {
+            waitUntilOrbContentDescription(scenario, "Appearance: System default")
+            lateinit var viewModel: AppearanceViewModel
+            scenario.onActivity { activity ->
+                viewModel = ViewModelProvider(activity)[AppearanceViewModel::class.java]
+            }
+
+            // Direct menu: Select Dark
+            selectThemeModeViaOrbMenu(scenario, AppThemeMode.DARK)
+            waitUntil(10_000L) {
+                viewModel.themeMode.value == AppThemeMode.DARK &&
+                    repository.themeMode.first() == AppThemeMode.DARK
+            }
+            waitUntilOrbContentDescription(scenario, "Appearance: Dark")
+            waitUntilScreenTheme(scenario, expectDark = true)
+
+            // Direct menu: Select Light
+            selectThemeModeViaOrbMenu(scenario, AppThemeMode.LIGHT)
+            waitUntil(10_000L) {
+                viewModel.themeMode.value == AppThemeMode.LIGHT &&
+                    repository.themeMode.first() == AppThemeMode.LIGHT
+            }
+            waitUntilOrbContentDescription(scenario, "Appearance: Light")
+            waitUntilScreenTheme(scenario, expectDark = false)
+
+            // Direct menu: Select System default
+            selectThemeModeViaOrbMenu(scenario, AppThemeMode.SYSTEM)
+            waitUntil(10_000L) {
+                viewModel.themeMode.value == AppThemeMode.SYSTEM &&
+                    repository.themeMode.first() == AppThemeMode.SYSTEM
+            }
+            waitUntilOrbContentDescription(scenario, "Appearance: System default")
+            waitUntilScreenTheme(scenario, expectDark = false)
+        } finally {
+            scenario.close()
+        }
+    }
+
+    @Test
+    fun topBarControls_exposeExpectedContentDescriptions_andOperateIndependently() = runBlocking {
+        setEmulatorNightMode("no")
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        try {
+            waitUntil(10_000L) {
+                var hasBoth = false
+                scenario.onActivity { activity ->
+                    val descs = findAllContentDescriptions(activity)
+                    hasBoth = "Appearance: System default" in descs && "About" in descs
+                }
+                hasBoth
+            }
+
+            // Opening About sheet operates independently and does not alter appearance mode
+            openAboutSheet(scenario)
+            assertEquals(AppThemeMode.SYSTEM, repository.themeMode.first())
+            dismissAboutSheet(scenario)
+            waitUntilOrbContentDescription(scenario, "Appearance: System default")
+        } finally {
+            scenario.close()
+        }
+    }
+
+    @Test
+    fun qualityCards_useSemanticColors_inLightAndDarkModes_andSurviveFontScale13() = runBlocking {
+        setEmulatorNightMode("no")
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        try {
+            // Light mode check
+            waitUntilScreenTheme(scenario, expectDark = false)
+            waitUntilQualityCardColors(
+                scenario = scenario,
+                selectedCardTitle = "Full HD Detail",
+                unselectedCardTitle = "HD Longer",
+                expectedSelectedColor = PrimaryContainerLight.toArgb(),
+                expectedUnselectedColor = SurfaceContainerLowLight.toArgb()
+            )
+
+            // Dark mode check
+            clickThemeOrb(scenario, expectedCurrentDesc = "Appearance: System default")
+            waitUntilOrbContentDescription(scenario, "Appearance: Light")
+            clickThemeOrb(scenario, expectedCurrentDesc = "Appearance: Light")
+            waitUntilOrbContentDescription(scenario, "Appearance: Dark")
+            waitUntilScreenTheme(scenario, expectDark = true)
+
+            waitUntilQualityCardColors(
+                scenario = scenario,
+                selectedCardTitle = "Full HD Detail",
+                unselectedCardTitle = "HD Longer",
+                expectedSelectedColor = PrimaryContainerDark.toArgb(),
+                expectedUnselectedColor = SurfaceDark.toArgb()
+            )
+
+            // Font scale 1.3 check in Light mode: ensure output cards remain visible without overlap or clipping
+            clickThemeOrb(scenario, expectedCurrentDesc = "Appearance: Dark")
+            waitUntilOrbContentDescription(scenario, "Appearance: System default")
+            waitUntilScreenTheme(scenario, expectDark = false)
+
+            setFontScale("1.3")
+            waitUntil(10_000L) {
+                var validAtScale = false
+                scenario.onActivity { activity ->
+                    val texts = findAllComposeTexts(activity)
+                    val titleBounds = findUnmergedTextBoundsInWindow(activity, "Full HD Detail")
+                    val badgeBounds = findUnmergedTextBoundsInWindow(activity, "1080P")
+                    val primaryBounds = findUnmergedTextBoundsInWindow(activity, "Best for fine detail")
+                    val secondaryBounds = findUnmergedTextBoundsInWindow(activity, "30-second parts")
+                    val unselectedBounds = findUnmergedTextBoundsInWindow(activity, "HD Longer")
+                    validAtScale = "Full HD Detail" in texts &&
+                        "HD Longer" in texts &&
+                        titleBounds != null &&
+                        badgeBounds != null &&
+                        primaryBounds != null &&
+                        secondaryBounds != null &&
+                        unselectedBounds != null &&
+                        titleBounds.height() > 0 &&
+                        badgeBounds.height() > 0 &&
+                        primaryBounds.height() > 0 &&
+                        secondaryBounds.height() > 0 &&
+                        unselectedBounds.height() > 0 &&
+                        titleBounds.bottom <= badgeBounds.top &&
+                        badgeBounds.bottom <= primaryBounds.top &&
+                        primaryBounds.bottom <= secondaryBounds.top
+                }
+                validAtScale
+            }
+        } finally {
+            setFontScale("1.0")
             scenario.close()
         }
     }
@@ -161,23 +365,14 @@ class AppearanceThemeInstrumentedTest {
         try {
             waitUntilScreenTheme(scenario, expectDark = false)
 
-            openAboutSheet(scenario)
-            clickOptionInAboutSheet(scenario, "Dark")
-            waitUntil(10_000L) { repository.themeMode.first() == AppThemeMode.DARK }
-            dismissAboutSheet(scenario)
+            selectThemeModeViaOrbMenu(scenario, AppThemeMode.DARK)
             waitUntilScreenTheme(scenario, expectDark = true)
+            waitUntilOrbContentDescription(scenario, "Appearance: Dark")
 
             scenario.recreate()
             waitUntilScreenTheme(scenario, expectDark = true)
-
-            openAboutSheet(scenario)
-            waitUntil(10_000L) {
-                var selected = false
-                scenario.onActivity { activity ->
-                    selected = isComposeNodeSelected(activity, "Dark")
-                }
-                selected
-            }
+            waitUntilOrbContentDescription(scenario, "Appearance: Dark")
+            assertEquals(AppThemeMode.DARK, repository.themeMode.first())
         } finally {
             scenario.close()
         }
@@ -189,9 +384,9 @@ class AppearanceThemeInstrumentedTest {
         val firstScenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             waitUntilScreenTheme(firstScenario, expectDark = false)
-            openAboutSheet(firstScenario)
-            clickOptionInAboutSheet(firstScenario, "Dark")
+            selectThemeModeViaOrbMenu(firstScenario, AppThemeMode.DARK)
             waitUntil(10_000L) { repository.themeMode.first() == AppThemeMode.DARK }
+            waitUntilOrbContentDescription(firstScenario, "Appearance: Dark")
         } finally {
             firstScenario.close()
         }
@@ -199,14 +394,8 @@ class AppearanceThemeInstrumentedTest {
         val secondScenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             waitUntilScreenTheme(secondScenario, expectDark = true)
-            openAboutSheet(secondScenario)
-            waitUntil(10_000L) {
-                var selected = false
-                secondScenario.onActivity { activity ->
-                    selected = isComposeNodeSelected(activity, "Dark")
-                }
-                selected
-            }
+            waitUntilOrbContentDescription(secondScenario, "Appearance: Dark")
+            assertEquals(AppThemeMode.DARK, repository.themeMode.first())
         } finally {
             secondScenario.close()
         }
@@ -218,23 +407,15 @@ class AppearanceThemeInstrumentedTest {
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             for (expectDark in listOf(false, true)) {
-                val targetOption = if (expectDark) "Dark" else "Light"
                 val targetMode = if (expectDark) AppThemeMode.DARK else AppThemeMode.LIGHT
+                selectThemeModeViaOrbMenu(scenario, targetMode)
 
-                openAboutSheet(scenario)
-                clickOptionInAboutSheet(scenario, targetOption)
-                waitUntil(10_000L) { repository.themeMode.first() == targetMode }
-                dismissAboutSheet(scenario)
-
-                // Video destination
                 clickTabAndWaitForText(scenario, "Video", "Make every frame count")
                 waitUntilScreenTheme(scenario, expectDark = expectDark)
 
-                // Photo destination
                 clickTabAndWaitForText(scenario, "Photo", "Sharper photos, lighter files")
                 waitUntilScreenTheme(scenario, expectDark = expectDark)
 
-                // Saved destination
                 clickTabAndWaitForText(scenario, "Saved", "Keep a copy of viewed media")
                 waitUntilScreenTheme(scenario, expectDark = expectDark)
             }
@@ -251,10 +432,7 @@ class AppearanceThemeInstrumentedTest {
 
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
-            openAboutSheet(scenario)
-            clickOptionInAboutSheet(scenario, "Light")
-            waitUntil(10_000L) { repository.themeMode.first() == AppThemeMode.LIGHT }
-            dismissAboutSheet(scenario)
+            selectThemeModeViaOrbMenu(scenario, AppThemeMode.LIGHT)
 
             clickTabAndWaitForText(scenario, "Photo", "Prepare multiple photos")
 
@@ -286,12 +464,7 @@ class AppearanceThemeInstrumentedTest {
 
             waitUntilScreenTheme(scenario, expectDark = false)
 
-            // Switch to Dark mode while Batch Photo is active
-            openAboutSheet(scenario)
-            clickOptionInAboutSheet(scenario, "Dark")
-            waitUntil(10_000L) { repository.themeMode.first() == AppThemeMode.DARK }
-            dismissAboutSheet(scenario)
-
+            selectThemeModeViaOrbMenu(scenario, AppThemeMode.DARK)
             waitUntil(10_000L) {
                 var stillOnBatch = false
                 scenario.onActivity { activity ->
@@ -312,7 +485,6 @@ class AppearanceThemeInstrumentedTest {
 
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
-            // Prepare both Video and Photo selections so their persistent bottom action bars appear
             scenario.onActivity { activity ->
                 ViewModelProvider(activity)[VideoViewModel::class.java].selectVideo(
                     uri = photoUri,
@@ -325,19 +497,12 @@ class AppearanceThemeInstrumentedTest {
             }
 
             for (expectDark in listOf(false, true)) {
-                val targetOption = if (expectDark) "Dark" else "Light"
                 val targetMode = if (expectDark) AppThemeMode.DARK else AppThemeMode.LIGHT
+                selectThemeModeViaOrbMenu(scenario, targetMode)
 
-                openAboutSheet(scenario)
-                clickOptionInAboutSheet(scenario, targetOption)
-                waitUntil(10_000L) { repository.themeMode.first() == targetMode }
-                dismissAboutSheet(scenario)
-
-                // Verify persistent "Prepare video" action bar and system bars
                 clickTabAndWaitForText(scenario, "Video", "Prepare video")
                 waitUntilPersistentBarTheme(scenario, buttonLabel = "Prepare video", expectDark = expectDark)
 
-                // Verify persistent "Prepare photo" action bar and system bars
                 clickTabAndWaitForText(scenario, "Photo", "Prepare photo")
                 waitUntilPersistentBarTheme(scenario, buttonLabel = "Prepare photo", expectDark = expectDark)
             }
@@ -350,7 +515,7 @@ class AppearanceThemeInstrumentedTest {
         waitUntil(10_000L) {
             var opened = false
             scenario.onActivity { activity ->
-                if ("Appearance" in findAllComposeTexts(activity)) {
+                if ("About StatusHD" in findAllComposeTexts(activity)) {
                     opened = true
                 } else {
                     clickComposeNodeByContentDescription(activity, "About")
@@ -360,24 +525,64 @@ class AppearanceThemeInstrumentedTest {
         }
     }
 
-    private suspend fun clickOptionInAboutSheet(scenario: ActivityScenario<MainActivity>, title: String) {
-        waitUntil(10_000L) {
-            var clicked = false
-            scenario.onActivity { activity ->
-                clicked = clickComposeNodeWithText(activity, title)
-            }
-            clicked
-        }
-    }
-
     private suspend fun dismissAboutSheet(scenario: ActivityScenario<MainActivity>) {
         executeShell("input keyevent 4")
         waitUntil(10_000L) {
             var dismissed = false
             scenario.onActivity { activity ->
-                dismissed = "Appearance" !in findAllComposeTexts(activity)
+                dismissed = "About StatusHD" !in findAllComposeTexts(activity)
             }
             dismissed
+        }
+    }
+
+    private suspend fun selectThemeModeViaOrbMenu(
+        scenario: ActivityScenario<MainActivity>,
+        mode: AppThemeMode
+    ) {
+        val label = when (mode) {
+            AppThemeMode.SYSTEM -> "System default"
+            AppThemeMode.LIGHT -> "Light"
+            AppThemeMode.DARK -> "Dark"
+        }
+        waitUntil(10_000L) {
+            var selected = false
+            scenario.onActivity { activity ->
+                if (clickComposeNodeWithText(activity, label)) {
+                    selected = true
+                } else {
+                    val currentDesc = findAllContentDescriptions(activity)
+                        .firstOrNull { it.startsWith("Appearance:") } ?: "Appearance: System default"
+                    longClickComposeNodeByContentDescription(activity, currentDesc)
+                }
+            }
+            selected
+        }
+        waitUntil(10_000L) {
+            repository.themeMode.first() == mode
+        }
+    }
+
+    private suspend fun clickThemeOrb(scenario: ActivityScenario<MainActivity>, expectedCurrentDesc: String) {
+        waitUntil(10_000L) {
+            var clicked = false
+            scenario.onActivity { activity ->
+                clicked = clickComposeNodeByContentDescription(activity, expectedCurrentDesc)
+            }
+            clicked
+        }
+    }
+
+    private suspend fun waitUntilOrbContentDescription(
+        scenario: ActivityScenario<MainActivity>,
+        expectedDesc: String
+    ) {
+        waitUntil(10_000L) {
+            var found = false
+            scenario.onActivity { activity ->
+                found = expectedDesc in findAllContentDescriptions(activity)
+            }
+            found
         }
     }
 
@@ -398,6 +603,61 @@ class AppearanceThemeInstrumentedTest {
             }
             done
         }
+    }
+
+    private suspend fun waitUntilQualityCardColors(
+        scenario: ActivityScenario<MainActivity>,
+        selectedCardTitle: String,
+        unselectedCardTitle: String,
+        expectedSelectedColor: Int,
+        expectedUnselectedColor: Int
+    ) {
+        waitUntil(10_000L) {
+            var matched = false
+            var bitmap: Bitmap? = null
+            var selectedCardBounds: Rect? = null
+            var unselectedCardBounds: Rect? = null
+
+            scenario.onActivity { activity ->
+                selectedCardBounds = findCardBoundsByTitle(activity, selectedCardTitle, expectSelected = true)
+                unselectedCardBounds = findCardBoundsByTitle(activity, unselectedCardTitle, expectSelected = false)
+                if (selectedCardBounds != null && unselectedCardBounds != null) {
+                    bitmap = captureWindowBitmap(activity)
+                }
+            }
+
+            val bmp = bitmap ?: return@waitUntil false
+            val selBounds = selectedCardBounds
+            val unselBounds = unselectedCardBounds
+            if (selBounds == null || unselBounds == null) {
+                bmp.recycle()
+                return@waitUntil false
+            }
+
+            try {
+                // Sample inside top-right padding area of each card (well inside border, clear of text)
+                val selX = (selBounds.left + 20).coerceIn(0, bmp.width - 1)
+                val selY = (selBounds.bottom - 20).coerceIn(0, bmp.height - 1)
+                val unselX = (unselBounds.left + 20).coerceIn(0, bmp.width - 1)
+                val unselY = (unselBounds.bottom - 20).coerceIn(0, bmp.height - 1)
+
+                val selPixel = bmp.getPixel(selX, selY)
+                val unselPixel = bmp.getPixel(unselX, unselY)
+
+                matched = colorsClose(selPixel, expectedSelectedColor) &&
+                    colorsClose(unselPixel, expectedUnselectedColor)
+            } finally {
+                bmp.recycle()
+            }
+            matched
+        }
+    }
+
+    private fun colorsClose(actual: Int, expected: Int, tolerance: Int = 18): Boolean {
+        val dr = abs(android.graphics.Color.red(actual) - android.graphics.Color.red(expected))
+        val dg = abs(android.graphics.Color.green(actual) - android.graphics.Color.green(expected))
+        val db = abs(android.graphics.Color.blue(actual) - android.graphics.Color.blue(expected))
+        return dr <= tolerance && dg <= tolerance && db <= tolerance
     }
 
     private suspend fun waitUntilScreenTheme(
@@ -422,7 +682,6 @@ class AppearanceThemeInstrumentedTest {
 
             val bitmap = capturedBitmap ?: return@waitUntil false
             try {
-                // Sample left margin outside cards/hero (within 20.dp padding) at vertical midpoint
                 val sampleX = 10.coerceIn(0, bitmap.width - 1)
                 val sampleY = (bitmap.height / 2).coerceIn(0, bitmap.height - 1)
                 val luminance = ColorUtils.calculateLuminance(bitmap.getPixel(sampleX, sampleY))
@@ -473,7 +732,6 @@ class AppearanceThemeInstrumentedTest {
             }
 
             try {
-                // Sample inside the persistent bar's left horizontal padding next to the action button
                 val sampleX = (bounds.left - 16).coerceIn(4, bitmap.width - 1)
                 val sampleY = bounds.centerY().coerceIn(0, bitmap.height - 1)
                 val luminance = ColorUtils.calculateLuminance(bitmap.getPixel(sampleX, sampleY))
@@ -550,6 +808,16 @@ class AppearanceThemeInstrumentedTest {
         executeShell("cmd uimode night $normalized")
     }
 
+    private fun readFontScale(): String {
+        val output = executeShell("settings get system font_scale").trim()
+        return if (output.toFloatOrNull() != null) output else "1.0"
+    }
+
+    private fun setFontScale(scale: String) {
+        val value = scale.toFloatOrNull() ?: 1.0f
+        executeShell("settings put system font_scale $value")
+    }
+
     private fun executeShell(command: String): String {
         val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
         return pfd.use { descriptor ->
@@ -559,11 +827,14 @@ class AppearanceThemeInstrumentedTest {
         }
     }
 
-    private fun collectAllSemanticsNodes(activity: Activity): List<SemanticsNode> {
+    private fun collectAllSemanticsNodes(
+        activity: Activity,
+        mergingEnabled: Boolean = true
+    ): List<SemanticsNode> {
         val result = mutableListOf<SemanticsNode>()
         fun traverse(view: View) {
             if (view is ViewRootForTest) {
-                result.addAll(view.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true))
+                result.addAll(view.semanticsOwner.getAllSemanticsNodes(mergingEnabled = mergingEnabled))
             }
             if (view is ViewGroup) {
                 for (i in 0 until view.childCount) {
@@ -578,6 +849,17 @@ class AppearanceThemeInstrumentedTest {
         return result
     }
 
+    private fun findUnmergedTextBoundsInWindow(activity: Activity, label: String): Rect? {
+        for (node in collectAllSemanticsNodes(activity, mergingEnabled = false)) {
+            val nodeTexts = node.config.getOrNull(SemanticsProperties.Text)?.map { it.text }.orEmpty()
+            if (label in nodeTexts && node.children.isEmpty()) {
+                val rect = node.boundsInWindow
+                return Rect(rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt())
+            }
+        }
+        return null
+    }
+
     private fun findAllComposeTexts(activity: Activity): List<String> {
         val texts = mutableListOf<String>()
         for (node in collectAllSemanticsNodes(activity)) {
@@ -588,16 +870,26 @@ class AppearanceThemeInstrumentedTest {
         return texts
     }
 
-    private fun isComposeNodeSelected(activity: Activity, label: String): Boolean {
+    private fun findAllContentDescriptions(activity: Activity): List<String> {
+        val descriptions = mutableListOf<String>()
         for (node in collectAllSemanticsNodes(activity)) {
-            val nodeTexts = node.config.getOrNull(SemanticsProperties.Text)?.map { it.text }.orEmpty()
-            if (label in nodeTexts) {
-                if (node.config.getOrNull(SemanticsProperties.Selected) == true) {
-                    return true
-                }
+            node.config.getOrNull(SemanticsProperties.ContentDescription)?.forEach { desc ->
+                descriptions.add(desc)
             }
         }
-        return false
+        return descriptions
+    }
+
+    private fun findCardBoundsByTitle(activity: Activity, title: String, expectSelected: Boolean): Rect? {
+        for (node in collectAllSemanticsNodes(activity)) {
+            val nodeTexts = node.config.getOrNull(SemanticsProperties.Text)?.map { it.text }.orEmpty()
+            val selectedProp = node.config.getOrNull(SemanticsProperties.Selected)
+            if (title in nodeTexts && selectedProp == expectSelected) {
+                val rect = node.boundsInWindow
+                return Rect(rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt())
+            }
+        }
+        return null
     }
 
     private fun clickComposeNodeWithText(activity: Activity, label: String): Boolean {
@@ -619,6 +911,19 @@ class AppearanceThemeInstrumentedTest {
             if (contentDesc in descriptions) {
                 val onClick = node.config.getOrNull(SemanticsActions.OnClick)
                 if (onClick != null && onClick.action?.invoke() == true) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun longClickComposeNodeByContentDescription(activity: Activity, contentDesc: String): Boolean {
+        for (node in collectAllSemanticsNodes(activity)) {
+            val descriptions = node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+            if (contentDesc in descriptions) {
+                val onLongClick = node.config.getOrNull(SemanticsActions.OnLongClick)
+                if (onLongClick != null && onLongClick.action?.invoke() == true) {
                     return true
                 }
             }

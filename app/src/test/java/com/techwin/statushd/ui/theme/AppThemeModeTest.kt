@@ -44,4 +44,11 @@ class AppThemeModeTest {
         assertEquals(AppThemeMode.SYSTEM, AppThemeMode.fromStorageValue("LIGHT"))
         assertEquals(AppThemeMode.SYSTEM, AppThemeMode.fromStorageValue("corrupt_value"))
     }
+
+    @Test
+    fun nextThemeMode_cyclesSystemLightDarkSystem() {
+        assertEquals(AppThemeMode.LIGHT, nextThemeMode(AppThemeMode.SYSTEM))
+        assertEquals(AppThemeMode.DARK, nextThemeMode(AppThemeMode.LIGHT))
+        assertEquals(AppThemeMode.SYSTEM, nextThemeMode(AppThemeMode.DARK))
+    }
 }

@@ -20,3 +20,9 @@ fun resolveDarkTheme(
     AppThemeMode.LIGHT -> false
     AppThemeMode.DARK -> true
 }
+
+fun nextThemeMode(mode: AppThemeMode): AppThemeMode = when (mode) {
+    AppThemeMode.SYSTEM -> AppThemeMode.LIGHT
+    AppThemeMode.LIGHT -> AppThemeMode.DARK
+    AppThemeMode.DARK -> AppThemeMode.SYSTEM
+}

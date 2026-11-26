@@ -171,9 +171,9 @@ fun VideoScreenContent(viewModel: VideoViewModel, paddingValues: PaddingValues) 
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = paddingValues.calculateBottomPadding()),
-                    color = MaterialTheme.colorScheme.background,
-                    tonalElevation = 8.dp,
-                    shadowElevation = 8.dp
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 2.dp
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -189,7 +189,6 @@ fun VideoScreenContent(viewModel: VideoViewModel, paddingValues: PaddingValues) 
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
                 }
             }

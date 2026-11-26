@@ -102,7 +102,9 @@ fun BatchPhotoScreenContent(
                     Text("Stay")
                 }
             },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 
@@ -419,7 +421,7 @@ fun BatchDraftItemRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -460,7 +462,7 @@ fun BatchStatusItemRow(item: BatchPhotoItem) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
